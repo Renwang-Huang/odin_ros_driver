@@ -1,70 +1,73 @@
-register_keys:
-  # if off, allow connection even if usb connection is below usb 3.0
-  # ATTENTION: usb 3.0 is always recommended, as advance functionality like SLAM mode requires usb 3.0 for reliable map file transfer
-  strict_usb3.0_check: 0  # 0: off: 1: on;
+## Odin1 数据流控制文件
 
-  # 0: use odin internal system time as data time stamp as before, typical and recommanded;
-  # 1: use host ros time (upon recieve) as data time stamp, only use if you specifically require this setup, not recommanded for most user
+register_keys:
+  # 如果关闭此项，即使USB连接低于3.0版本，也允许进行连接
+  # ATTENTION: 始终推荐使用USB 3.0，因为SLAM模式等高级功能需要USB 3.0来确保地图文件传输的可靠性
+  strict_usb3.0_check: 1  # 0:关闭 || 1:开启
+
+  # 0: 使用Odin内部系统时间作为数据时间戳，这是典型做法，也是推荐设置
+  # 1: 使用主机ROS时间（以收到数据的时间为准）作为数据时间戳，仅在你有特殊需求时使用，对绝大多数用户不推荐
   use_host_ros_time: 0
 
-  streamctrl: 1           # 0: off; 1: on
+  streamctrl: 1           # 0:关闭 || 1:开启
 
-  # original rgb data in jpeg format from device
-  sendrgbcompressed: 1    # 0: off; 1: on
+  # 来自设备的原始RGB数据将以JPEG格式（压缩格式）发送
+  sendrgbcompressed: 1    # 0:关闭 || 1:开启
 
-  # RGB data, decoded from original jpeg data from device, bgr8 format
-  # Processed on host device
-  sendrgb: 1              # 0: off; 1: on
+  # RGB数据，由来自 Odin1 设备的原始JPEG数据解码而来，采用bgr8格式,此过程发生在主机设备上
+  sendrgb: 1              # 0:关闭 || 1:开启
 
-  # undistort rgb image processed from decoded rgb data.
-  # depends on sendrgb. related camera parameters can be found in ws/src/odin_ros_driver/config/calib.yaml
-  # Processed on host device
-  sendrgbundistort: 0     # 0: off; 1: on.
+  # 对解码后的RGB数据进行去畸变（校正）处理
+  # 该功能依赖于 sendrgb 是否开启，相关的相机内参和畸变参数可以在 ws/src/odin_ros_driver/config/calib.yaml 文件中找到
+  # 此过程发生在主机设备上
+  sendrgbundistort: 1     # 0:关闭 || 1:开启
 
   # IMU data
-  sendimu: 1              # 0: off; 1: on
+  sendimu: 1              # 0:关闭 || 1:开启
 
   # Odometry data
-  sendodom: 1             # 0: off; 1: on
+  sendodom: 1             # 0:关闭 || 1:开启
 
-  # TF from odom to base_link. Leave it on unless you specifically need it off.
-  # ATTENTION: critical for rviz to show cloud_raw.
-  send_odom_baselink_tf: 1 # 0: off; 1: on.
+  # 发布从odom坐标系到base_link坐标系的TF变换，除非你有明确的特殊需求要关闭它，否则请保持开启状态
+  # ATTENTION: 这对于在RViz中显示cloud_raw至关重要
+  send_odom_baselink_tf: 1 # 0:关闭 || 1:开启
 
   # raw dtof data
-  senddtof: 1             # 0: off; 1: on
+  senddtof: 1             # 0:关闭 || 1:开启
 
   # slam cloud data
-  sendcloudslam: 1        # 0: off; 1: on
+  sendcloudslam: 1        # 0:关闭 || 1:开启
 
-  # processed with raw point cloud, rgb image, and calib.yaml from device
-  # Processed on host device
-  sendcloudrender: 1      # 0: off; 1: on
+  # 利用来自设备的原始点云（raw point cloud）、RGB 图像以及标定文件（calib.yaml）进行处理
+  # 此过程发生在主机设备上
+  sendcloudrender: 1      # 0:关闭 || 1:开启
 
-  # depth completion demo, high computing resource usage. 
-  # for more information please refer to the readme file.
-  # Processed on host device
-  senddepth: 0            # 0: off; 1: on
+  # 深度补全（Depth Completion）示例演示，计算资源占用率高
+  # 如需了解更多信息，请参阅 README 文件
+  # 此过程发生在主机设备上
+  senddepth: 1            # 0:关闭 || 1:开启
 
-  # record rgb, odometry, and slam cloud data as proprietary olx format for further processing in MindCloud(TM) software. 
+  # 将RGB图像、里程计（Odometry）以及SLAM点云数据录制并保存为 .olx 私有格式，以便后续在MindCloud(TM)软件中进行进一步处理 
   # save path: ws/src/odin_ros_driver/recorddata/{record_start_time}/
-  # ATTENTION: please copy the full folder for post-processing.
-  recorddata: 0           # 0: off; 1: on
+  # ATTENTION: 后期处理时，请务必拷贝整个文件夹
+  recorddata: 0           # 0:关闭 || 1:开启
 
-  # Save device runtime status info to ws/src/odin_ros_driver/log/Driver_{drvier_start_time}/Conn_{device_connection_time}/dev_status.csv
-  devstatuslog: 1         # 0: off; 1: on.
+  # 将设备运行时状态信息保存至路径 ws/src/odin_ros_driver/log/Driver_{drvier_start_time}/Conn_{device_connection_time}/dev_status.csv
+  devstatuslog: 1         # 0:关闭 || 1:开启
 
-  save_log: 0 # 0: off; 1: on; 
+  save_log: 0             # 0:关闭 || 1:开启
 
-  # raw dtof sensor intensity data in gray format, mostly for debug purpose.
-  pubintensitygray: 0     # 0: off; 1: on
+  # 灰度格式的原始dToF传感器强度（Intensity）数据，主要用于调试目的
+  pubintensitygray: 0     # 0:关闭 || 1:开启
 
-  showpath: 0             # 0: off; 1: on
-  showcamerapose: 0       # 0: off; 1: on
+  showpath: 0             # 0:关闭 || 1:开启
+  showcamerapose: 0       # 0:关闭 || 1:开启
   
-  custom_save_map: 0
   custom_map_mode: 0      # 0: Odometry mode 1: SLAM mode 2: Relocalization mode
+
+  custom_save_map: 0
   custom_init_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
-  relocalization_map_abs_path: "" # must be set for Relocalization mode or will fail
-  mapping_result_dest_dir: "" # "": use default value; other: use custom value
-  mapping_result_file_name: "" # "": use default value; other: use custom value 
+  
+  relocalization_map_abs_path: ""    # must be set for Relocalization mode or will fail
+  mapping_result_dest_dir: ""        # "": use default value; other: use custom value
+  mapping_result_file_name: ""       # "": use default value; other: use custom value 
