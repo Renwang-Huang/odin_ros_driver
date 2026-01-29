@@ -92,16 +92,6 @@ bool rawCloudRender::init(const std::string& yamlFilePath) {
         tclNode[4].as<float>(), tclNode[5].as<float>(), tclNode[6].as<float>(), tclNode[7].as<float>(),
         tclNode[8].as<float>(), tclNode[9].as<float>(), tclNode[10].as<float>(), tclNode[11].as<float>(),
         tclNode[12].as<float>(), tclNode[13].as<float>(), tclNode[14].as<float>(), tclNode[15].as<float>();
-
-    // === Display key parameters concisely ===
-    // std::cout << "=== Camera Calibration Parameters ===" << std::endl;
-    // std::cout << "Intrinsics:" << std::endl;
-    // std::cout << "  fx: " << GlobalCameraParams::g_fx 
-    //           << ", fy: " << GlobalCameraParams::g_fy
-    //           << ", cx: " << GlobalCameraParams::g_cx 
-    //           << ", cy: " << GlobalCameraParams::g_cy << std::endl;
-    // std::cout << "Distortion: k2=" << GlobalCameraParams::g_k2 
-    //           << ", k3=" << GlobalCameraParams::g_k3 << std::endl;
     
     // Extrinsics: Translation and Rotation
     Eigen::Vector3f translation = GlobalCameraParams::g_T_camera_lidar.block<3,1>(0,3);
@@ -282,25 +272,5 @@ void rawCloudRender::render(std::vector<std::vector<float>>& rgb_image,
 void rawCloudRender::print_camera_calib() {
     std::cout << model_type_ << std::endl;
     std::cout << image_width_ << std::endl;
-    std::cout << image_height_ << std::endl;
-
-    // std::cout << "T_camera_lidar" << std::endl;
-    // std::cout << T_camera_lidar_(0,0) << " " << T_camera_lidar_(0,1) << " " << T_camera_lidar_(0,2) << " " << T_camera_lidar_(0,3) << std::endl;
-    // std::cout << T_camera_lidar_(1,0) << " " << T_camera_lidar_(1,1) << " " << T_camera_lidar_(1,2) << " " << T_camera_lidar_(1,3) << std::endl;
-    // std::cout << T_camera_lidar_(2,0) << " " << T_camera_lidar_(2,1) << " " << T_camera_lidar_(2,2) << " " << T_camera_lidar_(2,3) << std::endl;
-    // std::cout << T_camera_lidar_(3,0) << " " << T_camera_lidar_(3,1) << " " << T_camera_lidar_(3,2) << " " << T_camera_lidar_(3,3) << std::endl;
-
-    // std::cout << "cam" << std::endl;
-    // std::cout << k2_ << std::endl;
-    // std::cout << k3_ << std::endl;
-    // std::cout << k4_ << std::endl;
-    // std::cout << k5_ << std::endl;
-    // std::cout << k6_ << std::endl;
-    // std::cout << k7_ << std::endl;
-
-    // std::cout << A11_fx_ << std::endl;
-    // std::cout << A12_skew_ << std::endl;
-    // std::cout << A22_fy_ << std::endl;
-    // std::cout << u0_cx_ << std::endl;
-    // std::cout << v0_cy_ << std::endl;    
+    std::cout << image_height_ << std::endl;   
 }

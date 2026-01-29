@@ -26,15 +26,20 @@
 // #include <yaml-cpp/yaml.h>
 #include <iomanip>
 #include <sstream>
-#ifdef ROS2
-    #include <ament_index_cpp/get_package_share_directory.hpp>
-    #include <rclcpp/rclcpp.hpp>
-#else
-    #include <ros/package.h>
-    #include <ros/ros.h> 
-#endif
-#define ros_driver_version "0.7.1"
-#define recommended_firmware_version "0.8.0"
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <rclcpp/rclcpp.hpp>
+#define ros_driver_version "0.8.0"
+#define required_firmware_version_major 0
+#define required_firmware_version_minor 9
+#define required_firmware_version_patch 0
+
+// Unified logger and terminal output
+static const rclcpp::Logger& odin_logger() {
+    static const rclcpp::Logger log = rclcpp::get_logger("odin");
+    return log;
+}
+#define ODIN_SEP    "-------------------------------------------"
+#define ODIN_BANNER "=============== Odin 驱动 ==============="
 
 // Global variable declarations
 static device_handle odinDevice = nullptr;
@@ -44,11 +49,7 @@ static std::mutex device_mutex;                      // Device operation mutex l
 static std::atomic<bool> g_connection_timeout(false);
 static std::atomic<bool> g_usb_version_error(false);
 static std::atomic<bool> g_shutdown_requested(false);  // Signal handler flag
-#ifdef ROS2
-    std::shared_ptr<MultiSensorPublisher> g_ros_object = nullptr;
-#else
-    MultiSensorPublisher* g_ros_object = nullptr;
-#endif
+std::shared_ptr<MultiSensorPublisher> g_ros_object = nullptr;
 
 int g_log_level = LOG_LEVEL_INFO;
 int g_show_fps = 0;  // FPS display toggle control
@@ -94,6 +95,7 @@ int g_save_log = 0;
 
 std::filesystem::path log_root_dir_;
 int g_custom_map_mode = 0;
+bool g_relocalization_success_msg_printed = false;
 
 std::string g_relocalization_map_abs_path = "";
 std::string g_mapping_result_dest_dir = "";
@@ -135,11 +137,7 @@ double cal_fps(fpsHandle* handle, const char* name, bool print = false)
                    + (handle->last.tv_nsec - handle->start.tv_nsec) / 1e9;
     double fps = (handle->count - 1) / elapsed;
     if (print) {
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "%s FPS: %f (count: %d, elapsed: %f)", name, fps, handle->count, elapsed);
-        #else
-            ROS_INFO("%s FPS: %f (count: %d, elapsed: %f)", name, fps, handle->count, elapsed);
-        #endif
+        RCLCPP_INFO(odin_logger(), "%s FPS: %.1f（帧数: %d，耗时: %.2fs）", name, fps, handle->count, elapsed);
     }
     handle->start = handle->last;
     handle->count = 1;
@@ -242,12 +240,8 @@ static bool convert_calib_to_cam_in_ex(const std::string& calib_path, const std:
 
 // Signal handler for Ctrl+C
 static void signal_handler(int signum) {
-    if (signum == SIGINT || signum == SIGTERM) {
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("signal_handler"), "Received signal %d, shutting down...", signum);
-        #else
-            ROS_INFO("Received signal %d, shutting down...", signum);
-        #endif
+        if (signum == SIGINT || signum == SIGTERM) {
+        RCLCPP_INFO(odin_logger(), "%s\n  [关机] 收到信号 %d，正在退出...", ODIN_SEP, signum);
 
         g_shutdown_requested = true;
 
@@ -264,40 +258,21 @@ static void signal_handler(int signum) {
                 const std::filesystem::path out_path = g_ros_object->get_root_dir() / "image" / "cam_in_ex.txt";
                 (void)convert_calib_to_cam_in_ex(calib_file_, out_path);
 
-                #ifdef ROS2
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "pose_index: %d", g_ros_object->get_pose_index());
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "cloud_index: %d", g_ros_object->get_cloud_index());
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "image_index: %d", g_ros_object->get_image_index());
-                #else
-                    ROS_INFO("pose_index: %d", g_ros_object->get_pose_index());
-                    ROS_INFO("cloud_index: %d", g_ros_object->get_cloud_index());
-                    ROS_INFO("image_index: %d", g_ros_object->get_image_index());
-                #endif
+                RCLCPP_INFO(odin_logger(), "  统计: pose=%d cloud=%d image=%d",
+                    g_ros_object->get_pose_index(), g_ros_object->get_cloud_index(), g_ros_object->get_image_index());
             }
 
-            #ifdef ROS2
-                RCLCPP_INFO(rclcpp::get_logger("signal_handler"), "Closing device...");
-            #else
-                ROS_INFO("Closing device...");
-            #endif
+            RCLCPP_INFO(odin_logger(), "  [关机] 正在关闭设备...");
 
             if (lidar_stop_stream(odinDevice, LIDAR_MODE_SLAM))
             {
-                #ifdef ROS2
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "lidar_stop_stream failed");
-                #else
-                    ROS_INFO("lidar_stop_stream failed");
-                #endif
+                RCLCPP_WARN(odin_logger(), "  停止数据流失败");
             }
             odinDevice = nullptr;
         }
 
         // Deinitialize lidar system
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("signal_handler"), "Deinitializing lidar system...");
-        #else
-            ROS_INFO("Deinitializing lidar system...");
-        #endif
+        RCLCPP_INFO(odin_logger(), "  [关机] 正在反初始化雷达系统...");
         lidar_system_deinit();
 
         // Close CSV file
@@ -308,11 +283,7 @@ static void signal_handler(int signum) {
         }
 
         // Shutdown ROS
-        #ifdef ROS2
-            rclcpp::shutdown();
-        #else
-            ros::shutdown();
-        #endif
+        rclcpp::shutdown();
 
         exit(0);
     }
@@ -328,12 +299,6 @@ static void custom_parameter_monitor() {
                 int result = lidar_get_custom_parameter(odinDevice, "save_map", &value);
 
                 if (result == 0) {
-                    // #ifdef ROS2
-                    //     RCLCPP_INFO(rclcpp::get_logger("param_monitor"), "save_map = %d", value);
-                    // #else
-                    //     ROS_INFO("save_map = %d", value);
-                    // #endif
-
                     if (last_save_map_val == 1 && value == 0) {
                         auto now = std::chrono::system_clock::now();
                         std::time_t t = std::chrono::system_clock::to_time_t(now);
@@ -348,41 +313,22 @@ static void custom_parameter_monitor() {
 
                         std::string map_dir = g_mapping_result_dest_dir != "" ? g_mapping_result_dest_dir : map_root_dir_.string();
                         std::string map_name = g_mapping_result_file_name != "" ? g_mapping_result_file_name : "map_" + std::string(map_save_time) + ".bin";
-                        #ifdef ROS2
-                            RCLCPP_INFO(rclcpp::get_logger("param_monitor"), "Map is saved on device, now transfering to [%s/%s]", map_dir.c_str(), map_name.c_str());
-                        #else
-                            ROS_INFO("Map is saved on device, now transfering to [%s/%s]", map_dir.c_str(), map_name.c_str());
-                        #endif
+                        RCLCPP_INFO(odin_logger(), "[建图] 地图已保存，正在传输到 %s/%s", map_dir.c_str(), map_name.c_str());
                         int ret = lidar_get_mapping_result(odinDevice, map_dir.c_str(), map_name.c_str());
                         if (ret < 0 ) {
-                            #ifdef ROS2
-                                RCLCPP_WARN(rclcpp::get_logger("param_monitor"), "Failed to get mapping result");
-                            #else
-                                ROS_WARN("Failed to get mapping result");
-                            #endif
+                            RCLCPP_WARN(odin_logger(), "[建图] 获取地图失败");
                         } else if (ret == 0) {
-                            #ifdef ROS2
-                                RCLCPP_INFO(rclcpp::get_logger("param_monitor"), "map get success");
-                            #else
-                                ROS_INFO("map get success");
-                            #endif
+                            RCLCPP_INFO(odin_logger(), "[建图] 传输已开始");
                         } else {
-                            #ifdef ROS2
-                                RCLCPP_WARN(rclcpp::get_logger("param_monitor"), "Failed to get mapping result, error code: %d", ret);
-                            #else
-                                ROS_WARN("Failed to get mapping result, error code: %d", ret);
-                            #endif
+                            RCLCPP_WARN(odin_logger(), "[建图] 地图错误码: %d", ret);
                         }
                     }
                     last_save_map_val = value;
 
+                } else if (result == -2) {
+                    RCLCPP_INFO(odin_logger(), "[建图] 传输进行中，请稍后重试");
                 } else {
-                    #ifdef ROS2
-                        RCLCPP_WARN(rclcpp::get_logger("param_monitor"),
-                                   "Failed to get save_map parameter, error: %d", result);
-                    #else
-                        ROS_WARN("Failed to get save_map parameter, error: %d", result);
-                    #endif
+                    RCLCPP_WARN(odin_logger(), "[建图] save_map 错误: %d", result);
                 }
             }
         }
@@ -416,21 +362,13 @@ static void process_command_file() {
         std::string command, param_name, value_str;
         
         if (!(iss >> command >> param_name >> value_str)) {
-            #ifdef ROS2
-                RCLCPP_WARN(rclcpp::get_logger("command_processor"), "Invalid command format. Usage: set <parameter_name> <value>");
-            #else
-                ROS_WARN("Invalid command format. Usage: set <parameter_name> <value>");
-            #endif
+            RCLCPP_WARN(odin_logger(), "[命令] 格式错误，用法: set <参数名> <值>");
             return;
         }
         
         if (command == "set") {
             if (!deviceConnected || !odinDevice) {
-                #ifdef ROS2
-                    RCLCPP_WARN(rclcpp::get_logger("command_processor"), "Device not connected!");
-                #else
-                    ROS_WARN("Device not connected!");
-                #endif
+                RCLCPP_WARN(odin_logger(), "[命令] 设备未连接");
                 return;
             }
             
@@ -439,33 +377,15 @@ static void process_command_file() {
                 int result = lidar_set_custom_parameter(odinDevice, param_name.c_str(), &value, sizeof(int));
 
                 if (result == 0) {
-                    #ifdef ROS2
-                        RCLCPP_INFO(rclcpp::get_logger("command_processor"), 
-                                   "Successfully set %s = %d", param_name.c_str(), value);
-                    #else
-                        ROS_INFO("Successfully set %s = %d", param_name.c_str(), value);
-                    #endif
+                    RCLCPP_INFO(odin_logger(), "[命令] 已设置 %s = %d", param_name.c_str(), value);
                 } else {
-                    #ifdef ROS2
-                        RCLCPP_ERROR(rclcpp::get_logger("command_processor"), 
-                                    "Failed to set %s = %d, error: %d", param_name.c_str(), value, result);
-                    #else
-                        ROS_ERROR("Failed to set %s = %d, error: %d", param_name.c_str(), value, result);
-                    #endif
+                    RCLCPP_ERROR(odin_logger(), "[命令] 设置 %s 失败: %d", param_name.c_str(), result);
                 }
             } catch (const std::exception& e) {
-                #ifdef ROS2
-                    RCLCPP_ERROR(rclcpp::get_logger("command_processor"), "Invalid value: %s", value_str.c_str());
-                #else
-                    ROS_ERROR("Invalid value: %s", value_str.c_str());
-                #endif
+                RCLCPP_ERROR(odin_logger(), "[命令] 无效取值: %s", value_str.c_str());
             }
         } else {
-            #ifdef ROS2
-                RCLCPP_WARN(rclcpp::get_logger("command_processor"), "Unknown command: %s", command.c_str());
-            #else
-                ROS_WARN("Unknown command: %s", command.c_str());
-            #endif
+            RCLCPP_WARN(odin_logger(), "[命令] 未知命令: %s", command.c_str());
         }
     } else {
         file.close();
@@ -487,39 +407,23 @@ bool isUsb3OrHigher(const std::string& vendorId, const std::string& productId) {
     }
     
     if (result.empty()) {
-        #ifdef ROS2
-            RCLCPP_ERROR(rclcpp::get_logger("usb_check"), "Failed to get USB version information");
-        #else
-            ROS_ERROR("Failed to get USB version information");
-        #endif
+        RCLCPP_ERROR(odin_logger(), "[USB] 无法获取版本");
         return false;
     }
     
     // find bcdUSB
     size_t pos = result.find("bcdUSB");
     if (pos == std::string::npos) {
-        #ifdef ROS2
-            RCLCPP_ERROR(rclcpp::get_logger("usb_check"), "bcdUSB field not found in lsusb output");
-        #else
-            ROS_ERROR("bcdUSB field not found in lsusb output");
-        #endif
+        RCLCPP_ERROR(odin_logger(), "[USB] 未找到 bcdUSB");
         return false;
     }
     
     std::string versionStr = result.substr(pos + 7); // "bcdUSB" + space
     float version = std::stof(versionStr);
     
-    #ifdef ROS2
-        RCLCPP_INFO(rclcpp::get_logger("usb_check"), "Detected USB version: %.1f", version);
-    #else
-        ROS_INFO("Detected USB version: %.1f", version);
-    #endif
+    RCLCPP_INFO(odin_logger(), "[USB] 检测到版本 %.1f", version);
     if (!g_strict_usb3_0_check) {
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("usb_check"), "Strict USB3.0 check disabled");
-        #else
-            ROS_INFO("Strict USB3.0 check disabled");
-        #endif
+        RCLCPP_INFO(odin_logger(), "[USB] 已关闭严格 USB3.0 检查");
         return true;
     }
     return version >= 3.0;
@@ -565,11 +469,7 @@ bool isUsbDevicePresent(const std::string& vendorId, const std::string& productI
 static bool convert_calib_to_cam_in_ex(const std::string& calib_path, const std::filesystem::path& out_path) {
     try {
         if (calib_path.empty()) {
-            #ifdef ROS2
-                RCLCPP_WARN(rclcpp::get_logger("device_cb"), "calib_file_ is empty, skip writing cam_in_ex.txt");
-            #else
-                ROS_WARN("calib_file_ is empty, skip writing cam_in_ex.txt");
-            #endif
+            RCLCPP_WARN(odin_logger(), "[设备] 标定文件为空，跳过 cam_in_ex.txt");
             return false;
         }
 
@@ -619,11 +519,7 @@ static bool convert_calib_to_cam_in_ex(const std::string& calib_path, const std:
         // Truncate file then write content
         std::ofstream ofs(out_path, std::ios::out | std::ios::trunc);
         if (!ofs.is_open()) {
-            #ifdef ROS2
-                RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Failed to open cam_in_ex.txt for write: %s", out_path.string().c_str());
-            #else
-                ROS_ERROR("Failed to open cam_in_ex.txt for write: %s", out_path.string().c_str());
-            #endif
+            RCLCPP_ERROR(odin_logger(), "[设备] 无法写入 cam_in_ex.txt: %s", out_path.string().c_str());
             return false;
         }
 
@@ -662,37 +558,21 @@ static bool convert_calib_to_cam_in_ex(const std::string& calib_path, const std:
 
         ofs.flush();
 
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Wrote cam_in_ex.txt to: %s", out_path.string().c_str());
-        #else
-            ROS_INFO("Wrote cam_in_ex.txt to: %s", out_path.string().c_str());
-        #endif
+        RCLCPP_INFO(odin_logger(), "[设备] 已写入 cam_in_ex.txt");
         return true;
     } catch (const std::exception& e) {
-        #ifdef ROS2
-            RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Failed to convert calib.yaml: %s", e.what());
-        #else
-            ROS_ERROR("Failed to convert calib.yaml: %s", e.what());
-        #endif
+        RCLCPP_ERROR(odin_logger(), "[设备] 转换 calib.yaml 失败: %s", e.what());
         return false;
     }
 }
 
 // Get package share path
 std::string get_package_share_path(const std::string& package_name) {
-#ifdef ROS2
     try {
         return ament_index_cpp::get_package_share_directory(package_name);
     } catch (const std::exception& e) {
         throw std::runtime_error("Package not found: " + std::string(e.what()));
     }
-#else
-    try {
-        return ros::package::getPath(package_name);
-    } catch (const ros::InvalidNameException& e) {
-        throw std::runtime_error("Package not found: " + std::string(e.what()));
-    }
-#endif
 }
 
 std::string get_package_source_directory() {
@@ -706,19 +586,14 @@ std::string get_package_source_directory() {
     }
     
     if (path.empty()) {
-        throw std::runtime_error("Failed to locate package root directory");
+        throw std::runtime_error("无法定位到包根目录，请检查目录结构");
     }
     
     return path.string();
 }
 
-
 std::string get_package_path(const std::string& package_name) {
-    #ifdef ROS2
-        return ament_index_cpp::get_package_share_directory(package_name);
-    #else
-        return ros::package::getPath(package_name);
-    #endif
+    return ament_index_cpp::get_package_share_directory(package_name);
 }
 
 // Clear all queues
@@ -739,7 +614,7 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
     
     device_handle *dev_handle = static_cast<device_handle *>(user_data);
     if(!dev_handle || !data) {
-        printf("Invalid device handle or data.\n");
+        RCLCPP_WARN(odin_logger(), "[设备] 无效句柄或数据");
         return;
     }
     imu_convert_data_t *imudata = nullptr;
@@ -752,7 +627,7 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
 
     switch(data->type) {
         case LIDAR_DT_NONE:
-            printf("empty lidar data type: %x\n", data->type);
+            RCLCPP_WARN(odin_logger(), "[设备] 空雷达数据类型: 0x%x", data->type);
             break;
         case LIDAR_DT_RAW_RGB:
             if (g_sendrgb) {
@@ -809,14 +684,14 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
                                             dev_info_data->soc_thermal.gpu_temp,
                                             dev_info_data->soc_thermal.npu_temp);
                     if (rc < 0) { 
-                        printf("Failed to write to dev_status_csv_file\n");
+                        RCLCPP_WARN(odin_logger(), "[设备] 状态 CSV 写入失败");
                     }
 
                     rc = std::fprintf(dev_status_csv_file, "%d,%d,", 
                         dev_info_data->dtof_sensor.tx_temp,
                         dev_info_data->dtof_sensor.rx_temp);
                     if (rc < 0) { 
-                        printf("Failed to write to dev_status_csv_file\n");
+                        RCLCPP_WARN(odin_logger(), "[设备] 状态 CSV 写入失败");
                     }
 
                     for (int i = 0; i < 8; i++) {
@@ -830,7 +705,7 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
                         cal_fps(&rgb_rx_fps, "rgb_rx")
                     );
                     if (rc < 0) { 
-                        printf("Failed to write to dev_status_csv_file\n");
+                        RCLCPP_WARN(odin_logger(), "[设备] 状态 CSV 写入失败");
                     }
 
                     rc = std::fprintf(dev_status_csv_file, "%.2f,%.2f,%.2f,",
@@ -839,7 +714,7 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
                         cal_fps(&dtof_rx_fps, "dtof_rx")
                     );
                     if (rc < 0) { 
-                        printf("Failed to write to dev_status_csv_file\n");
+                        RCLCPP_WARN(odin_logger(), "[设备] 状态 CSV 写入失败");
                     }
 
                     rc = std::fprintf(dev_status_csv_file, "%.2f,%.2f,%.2f,",
@@ -848,7 +723,7 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
                         cal_fps(&imu_rx_fps, "imu_rx")
                     );
                     if (rc < 0) { 
-                        printf("Failed to write to dev_status_csv_file\n");
+                        RCLCPP_WARN(odin_logger(), "[设备] 状态 CSV 写入失败");
                     }
 
                     rc = std::fprintf(dev_status_csv_file, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,", 
@@ -859,82 +734,44 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
                         ((float)dev_info_data->slam_odom_highfreq_tx_odr)/1000,
                         cal_fps(&slam_odom_highfreq_rx_fps, "slam_odom_highfreq_rx"));
                     if (rc < 0) { 
-                        printf("Failed to write to dev_status_csv_file\n");
+                        RCLCPP_WARN(odin_logger(), "[设备] 状态 CSV 写入失败");
                     }
                                    
                     rc = std::fprintf(dev_status_csv_file, "%.2f\n", total_mb);
                     if (rc < 0) { 
-                        printf("Failed to write to dev_status_csv_file\n");
+                        RCLCPP_WARN(odin_logger(), "[设备] 状态 CSV 写入失败");
                     }
 
                     std::fflush(dev_status_csv_file);
                 }
             }
             if (g_show_fps) {
-                printf("\n [dev_info] [soc_thermal]: package_temp:%dC \n", 
-                    dev_info_data->soc_thermal.package_temp);
-                printf("\n [dev_info] [soc_thermal]: cpu:%dC \n",
-                    dev_info_data->soc_thermal.cpu_temp);                
-                printf("\n [dev_info] [soc_thermal]: center_temp:%dC \n",
-                    dev_info_data->soc_thermal.center_temp);
-                printf("\n [dev_info] [soc_thermal]: gpu_temp:%dC \n",
-                    dev_info_data->soc_thermal.gpu_temp);
-                printf("\n [dev_info] [soc_thermal]: npu_temp:%dC \n",
-                    dev_info_data->soc_thermal.npu_temp);
-
-                for ( int i=0;i<8;i++) 
-                {
-                    printf("\n [dev_info] [cpu]: cpu_use_rate-core[%d]:%d%% \n",
-                                                    i,
-                                                    dev_info_data->cpu_use_rate[i]);
-
-                }
-                printf("\n [dev_info] [cpu]: ram_use_rate:%d%% \n",
-                    dev_info_data->ram_use_rate);
-
-                printf("\n [dev_info] [rgb]: configured_odr: %.2f HZ, tx_odr: %.2f HZ, rx_odr: %.2f HZ \n", 
-                    ((float)dev_info_data->rgb_sensor.configured_odr)/1000,
-                    ((float)dev_info_data->rgb_sensor.tx_odr)/1000,
-                    cal_fps(&rgb_rx_fps, "rgb_rx")
-                );
-
-                printf("\n [dev_info] [dtof]: configured_odr: %.2f HZ, tx_odr: %.2f HZ, rx_odr: %.2f HZ \n", 
-                    ((float)dev_info_data->dtof_sensor.configured_odr)/1000,
-                    ((float)dev_info_data->dtof_sensor.tx_odr)/1000,
-                    cal_fps(&dtof_rx_fps, "dtof_rx")
-                );
-                printf("\n [dev_info] [dtof]: subframe_odr: %.2f \n", 
-                    ((float)dev_info_data->dtof_sensor.subframe_odr)/1000);
-                printf("\n [dev_info] [dtof]: txtemp:%dC, rxtemp:%dC \n", dev_info_data->dtof_sensor.tx_temp, dev_info_data->dtof_sensor.rx_temp);
-
-                printf("\n [dev_info] [imu]: configured_odr: %.2f HZ, tx_odr: %.2f HZ, rx_odr: %.2f HZ\n",
-                    ((float) dev_info_data->imu_sensor.configured_odr)/1000,
-                    ((float) dev_info_data->imu_sensor.tx_odr)/1000,
-                    cal_fps(&imu_rx_fps, "imu_rx")
-                );
-
-                printf("\n [dev_info] [slam]: slam_cloud_tx_odr: %.2f HZ, rx_odr: %.2f HZ \n",
-                    ((float)dev_info_data->slam_cloud_tx_odr)/1000,
-                    cal_fps(&slam_cloud_rx_fps, "slam_cloud_rx")
-                );
-
-                printf("\n [dev_info] [slam]: slam_odom_tx_odr: %.2f HZ, rx_odr: %.2f HZ \n",
-                    ((float)dev_info_data->slam_odom_tx_odr)/1000,
-                    cal_fps(&slam_odom_rx_fps, "slam_odom_rx")
-                );
-
-                printf("\n [dev_info] [slam]: slam_odom_highfreq_tx_odr: %.2f HZ, rx_odr: %.2f HZ \n",
-                    ((float)dev_info_data->slam_odom_highfreq_tx_odr)/1000,
-                    cal_fps(&slam_odom_highfreq_rx_fps, "slam_odom_highfreq_rx")
-                );
-
-                #ifdef ROS2
-                    RCLCPP_INFO(rclcpp::get_logger("dev_info"), "Total RAM (parent + children): %.2f MB", total_mb);
-                #else
-                    ROS_INFO("Total RAM (parent + children): %.2f MB", total_mb);
-                #endif
-
-                printf("\n------------------------------------------\n");
+                double rgb_rx = cal_fps(&rgb_rx_fps, "rgb_rx");
+                double dtof_rx = cal_fps(&dtof_rx_fps, "dtof_rx");
+                double imu_rx = cal_fps(&imu_rx_fps, "imu_rx");
+                double slam_cloud_rx = cal_fps(&slam_cloud_rx_fps, "slam_cloud_rx");
+                double slam_odom_rx = cal_fps(&slam_odom_rx_fps, "slam_odom_rx");
+                double slam_hf_rx = cal_fps(&slam_odom_highfreq_rx_fps, "slam_odom_highfreq_rx");
+                std::ostringstream ss;
+                ss << "\n" << ODIN_SEP << "\n  [Status] Thermal(C): pkg=" << dev_info_data->soc_thermal.package_temp
+                   << " cpu=" << dev_info_data->soc_thermal.cpu_temp << " center=" << dev_info_data->soc_thermal.center_temp
+                   << " gpu=" << dev_info_data->soc_thermal.gpu_temp << " npu=" << dev_info_data->soc_thermal.npu_temp
+                   << "\n  CPU(%): ";
+                for (int i = 0; i < 8; i++) ss << (i ? " " : "") << dev_info_data->cpu_use_rate[i];
+                ss << " | RAM=" << dev_info_data->ram_use_rate << "%"
+                   << "\n  RGB(Hz): cfg=" << ((float)dev_info_data->rgb_sensor.configured_odr)/1000
+                   << " tx=" << ((float)dev_info_data->rgb_sensor.tx_odr)/1000 << " rx=" << std::fixed << std::setprecision(1) << rgb_rx
+                   << "\n  DTOF(Hz): cfg=" << ((float)dev_info_data->dtof_sensor.configured_odr)/1000
+                   << " tx=" << ((float)dev_info_data->dtof_sensor.tx_odr)/1000 << " rx=" << dtof_rx
+                   << " sub=" << ((float)dev_info_data->dtof_sensor.subframe_odr)/1000
+                   << " | T(tx=" << dev_info_data->dtof_sensor.tx_temp << "C rx=" << dev_info_data->dtof_sensor.rx_temp << "C)"
+                   << "\n  IMU(Hz): cfg=" << ((float)dev_info_data->imu_sensor.configured_odr)/1000
+                   << " tx=" << ((float)dev_info_data->imu_sensor.tx_odr)/1000 << " rx=" << imu_rx
+                   << "\n  SLAM(Hz): cloud tx=" << ((float)dev_info_data->slam_cloud_tx_odr)/1000 << " rx=" << slam_cloud_rx
+                   << " | odom tx=" << ((float)dev_info_data->slam_odom_tx_odr)/1000 << " rx=" << slam_odom_rx
+                   << " | hf tx=" << ((float)dev_info_data->slam_odom_highfreq_tx_odr)/1000 << " rx=" << slam_hf_rx
+                   << "\n  RAM: " << std::setprecision(2) << total_mb << " MB\n" << ODIN_SEP;
+                RCLCPP_INFO(odin_logger(), "%s", ss.str().c_str());
             }
             break;
             case LIDAR_DT_SLAM_ODOMETRY_HIGHFREQ:
@@ -949,16 +786,22 @@ static void lidar_data_callback(const lidar_data_t *data, void *user_data)
             {
                 if (g_custom_map_mode == 2) {
                     g_ros_object->publishOdometry((capture_Image_List_t *)&data->stream, OdometryType::TRANSFORM, false, false);
+                    if (!g_relocalization_success_msg_printed) {
+                        RCLCPP_INFO(odin_logger(), "[Odom] Relocalization success");
+                        g_relocalization_success_msg_printed = true;
+                    }
                 }
             }
             break;
             case LIDAR_DT_SLAM_WIWC:
             {
-                //...
+                if(g_record_data ) {
+                    g_ros_object->recordrotate((capture_Image_List_t *)&data->stream);
+                }
             }
             break;
         default:
-            printf("Unknown lidar data type: %x", data->type);
+            RCLCPP_WARN(odin_logger(), "[设备] 未知数据类型: 0x%x", data->type);
             return;
     }
 }
@@ -971,24 +814,12 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
     static bool software_connect_timing = false; 
     
     if(attach == true) {
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Hardware connected, starting software connection...");
-        #else
-            ROS_INFO("Hardware connected, starting software connection...");
-        #endif
+        RCLCPP_INFO(odin_logger(), "%s\n  [阶段] 硬件已连接，正在建立软件连接...\n%s", ODIN_BANNER, ODIN_SEP);
         if (!isUsb3OrHigher(TARGET_VENDOR, TARGET_PRODUCT)) {
-            #ifdef ROS2
-                RCLCPP_FATAL(rclcpp::get_logger("device_cb"), 
-                            "Device connected to USB 2.0 port. This device requires USB 3.0 or higher. Exiting program.");
-            #else
-                ROS_FATAL("Device connected to USB 2.0 port. This device requires USB 3.0 or higher. Exiting program.");
-            #endif
+            RCLCPP_FATAL(odin_logger(), "[USB] 设备接在 USB 2.0 上，需 USB 3.0 及以上。程序退出。");
 
             g_usb_version_error = true;
-            {
-                int ret = system("pkill -f rviz");
-                (void)ret;
-            }
+            system("pkill -f rviz");
             exit(1);
             return;
         }
@@ -1001,37 +832,24 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
         }
         
         if (lidar_create_device(const_cast<lidar_device_info_t*>(device), &odinDevice)) {
-            #ifdef ROS2
-                RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Create device failed");
-            #else
-                ROS_ERROR("Create device failed");
-            #endif
+            RCLCPP_ERROR(odin_logger(), "[设备] 创建设备失败");
             return;
         }
 	const std::string package_name = "odin_ros_driver";
 	std::string config_dir = "";
-	#ifdef ROS2
-	    char* ros_workspace = std::getenv("COLCON_PREFIX_PATH");
-	    if (ros_workspace) {
-		std::string workspace_path(ros_workspace);
-		size_t pos = workspace_path.find("/install");
-		if (pos != std::string::npos) {
-		    config_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/config";
-		} else {
-		    config_dir = ament_index_cpp::get_package_share_directory(package_name) + "/config";
-		}
+	char* ros_workspace = std::getenv("COLCON_PREFIX_PATH");
+	if (ros_workspace) {
+	    std::string workspace_path(ros_workspace);
+	    size_t pos = workspace_path.find("/install");
+	    if (pos != std::string::npos) {
+		config_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/config";
 	    } else {
 		config_dir = ament_index_cpp::get_package_share_directory(package_name) + "/config";
 	    }
-	#else
-	    config_dir = ros::package::getPath(package_name) + "/config";
-	#endif
-   		 std::cout << "config_dir"<< config_dir <<std::endl;
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Calibration files will be saved to: %s", config_dir.c_str());
-        #else
-            ROS_INFO("Calibration files will be saved to: %s", config_dir.c_str());
-        #endif
+	} else {
+	    config_dir = ament_index_cpp::get_package_share_directory(package_name) + "/config";
+	}
+        RCLCPP_INFO(odin_logger(), "[Device] Calibration dir: %s", config_dir.c_str());
 
         std::filesystem::path per_con_log_root_dir;
         {
@@ -1054,28 +872,15 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
             std::error_code per_con_dir_err;
             std::filesystem::create_directories(per_con_log_root_dir, per_con_dir_err);
             if (per_con_dir_err) {
-                #ifdef ROS2
-                    RCLCPP_WARN(rclcpp::get_logger("device_cb"),
-                                "Failed to create per-connection log directory %s: %s",
-                                per_con_log_root_dir.c_str(),
-                                per_con_dir_err.message().c_str());
-                #else
-                    ROS_WARN("Failed to create per-connection log directory %s: %s",
-                             per_con_log_root_dir.c_str(),
-                             per_con_dir_err.message().c_str());
-                #endif
+                RCLCPP_WARN(odin_logger(), "[设备] 创建日志目录失败 %s: %s",
+                    per_con_log_root_dir.string().c_str(), per_con_dir_err.message().c_str());
             }
         }
 
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - software_connect_start);
         if (elapsed.count() >= 60) {
-            #ifdef ROS2
-                RCLCPP_FATAL(rclcpp::get_logger("device_cb"), 
-                            "Software connection timed out after 60 seconds. Exiting program.");
-            #else
-                ROS_FATAL("Software connection timed out after 60 seconds. Exiting program.");
-            #endif
+            RCLCPP_FATAL(odin_logger(), "[Device] Connection timed out (60s). Exiting.");
             
             if (odinDevice) {
                 lidar_close_device(odinDevice);
@@ -1087,104 +892,71 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
             return;
         }
         
-        if(lidar_get_version(odinDevice)) {
-            #ifdef ROS2
-                RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Failed to get device firmware version, potential incompatible, please upgrade device firmware and retry.");
-            #else
-                ROS_ERROR("Failed to get device firmware version, potential incompatible, please upgrade device firmware and retry.");
-            #endif
-            {
-                int ret = system("pkill -f rviz");
-                (void)ret;
-            }
+        lidar_fireware_version_t version;
+        if(lidar_get_version(odinDevice,&version)) {
+            RCLCPP_ERROR(odin_logger(), "[设备] 获取固件版本失败，请升级设备固件");
+            system("pkill -f rviz");
+            system("pkill -f host_sdk_sample");
             exit(1);
         }
         else {
-            printf("ros_driver_version:%s, recommended_firmware_version:%s\n", ros_driver_version, recommended_firmware_version);
-            printf("get version success.\n");
+            RCLCPP_INFO(odin_logger(), "%s\n  [版本] 驱动 %s，要求固件 >= %d.%d.%d | 内核 V%d.%d.%d  MCU V%d.%d.%d  SOC V%d.%d.%d\n%s",
+                ODIN_SEP, ros_driver_version, required_firmware_version_major, required_firmware_version_minor, required_firmware_version_patch,
+                version.kernel_version.major, version.kernel_version.minor, version.kernel_version.patch,
+                version.mcu_version.major, version.mcu_version.minor, version.mcu_version.patch,
+                version.soc_version.major, version.soc_version.minor, version.soc_version.patch,
+                ODIN_SEP);
+
+            if (version.soc_version.major < required_firmware_version_major || (version.soc_version.minor < required_firmware_version_minor) || (version.soc_version.patch < required_firmware_version_patch)) {
+                RCLCPP_ERROR(odin_logger(), "[版本] SOC 版本过低，请升级固件至 >= %d.%d.%d", required_firmware_version_major, required_firmware_version_minor, required_firmware_version_patch);
+                system("pkill -f rviz");
+                system("pkill -f host_sdk_sample");
+                exit(1);
+            }
         }
 
         if (g_save_log) {
             if (lidar_enable_encrypted_device_log(const_cast<lidar_device_info_t*>(device), per_con_log_root_dir.c_str())) {
-                #ifdef ROS2
-                    RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Enable log failed");
-                #else
-                    ROS_ERROR("Enable log failed");
-                #endif
+                RCLCPP_ERROR(odin_logger(), "[设备] 开启加密日志失败");
                 lidar_close_device(odinDevice);
                 lidar_destory_device(odinDevice);
                 odinDevice = nullptr;
                 return;
             }
 
-            #ifdef ROS2
-                RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Encrypted device log enabled at: %s", per_con_log_root_dir.c_str());
-            #else
-                ROS_INFO("Encrypted device log enabled at: %s", per_con_log_root_dir.c_str());
-            #endif
+            RCLCPP_INFO(odin_logger(), "[设备] 加密日志已开启: %s", per_con_log_root_dir.c_str());
         } else {
-            #ifdef ROS2
-                RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Encrypted device log disabled via configuration");
-            #else
-                ROS_INFO("Encrypted device log disabled via configuration");
-            #endif
+            RCLCPP_INFO(odin_logger(), "[设备] 加密日志已关闭");
         }
 
         bool need_open_device = true;
         bool get_calib_file = true;
         switch (device->initial_state) {
             case LIDAR_DEVICE_NOT_INITIALIZED:
-                #ifdef ROS2
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Device state: not initialized, performing full setup");
-                #else
-                    ROS_INFO("Device state: not initialized, performing full setup");
-                #endif
+                RCLCPP_INFO(odin_logger(), "[阶段] 设备未初始化，执行完整初始化");
                 break;
             case LIDAR_DEVICE_INITIALIZED:
                 need_open_device = false;
-                #ifdef ROS2
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Device state: initialized, skip opening device");
-                #else
-                    ROS_INFO("Device state: initialized, skip opening device");
-                #endif
+                RCLCPP_INFO(odin_logger(), "[阶段] 设备已初始化，跳过打开");
                 break;
             case LIDAR_DEVICE_STREAMING:
-                #ifdef ROS2
-                    RCLCPP_WARN(rclcpp::get_logger("device_cb"), "Device state: streaming, this should not happen, exitting...");
-                #else
-                    ROS_WARN("Device state: streaming, this should not happen, exitting...");
-                #endif
-                {
-                    int ret = system("pkill -f rviz");
-                    (void)ret;
-                }
+                RCLCPP_WARN(odin_logger(), "[设备] 异常：已在推流，退出");
+                system("pkill -f rviz");
                 exit(1);
                 break;
             case LIDAR_DEVICE_STREAM_STOPPED:
                 need_open_device = false;
                 get_calib_file = false;
-                #ifdef ROS2
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Device state: stream stopped, resume streaming");
-                #else
-                    ROS_INFO("Device state: stream stopped, resume streaming");
-                #endif
+                RCLCPP_INFO(odin_logger(), "[Device] State: stream stopped, resuming");
                 break;
             default:
-                #ifdef ROS2
-                    RCLCPP_WARN(rclcpp::get_logger("device_cb"), "Unknown device initial state: %d", device->initial_state);
-                #else
-                    ROS_WARN("Unknown device initial state: %d", device->initial_state);
-                #endif
+                RCLCPP_WARN(odin_logger(), "[Device] Unknown state: %d", device->initial_state);
                 break;
         }
 
         if (need_open_device) {
             if (lidar_open_device(odinDevice)) {
-                #ifdef ROS2
-                    RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Open device failed");
-                #else
-                    ROS_ERROR("Open device failed");
-                #endif
+                RCLCPP_ERROR(odin_logger(), "[设备] 打开设备失败");
                 lidar_destory_device(odinDevice);
                 odinDevice = nullptr;
                 return;
@@ -1195,59 +967,31 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
         calib_file_ = calib_config;
         if (get_calib_file) {
             if (lidar_get_calib_file(odinDevice, config_dir.c_str())) {
-                #ifdef ROS2
-                    RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Failed to get calibration file");
-                #else
-                    ROS_ERROR("Failed to get calibration file");
-                #endif
+                RCLCPP_ERROR(odin_logger(), "[设备] 获取标定文件失败");
                 lidar_close_device(odinDevice);
                 lidar_destory_device(odinDevice);
                 odinDevice = nullptr;
                 return;
             }
             
-            #ifdef ROS2
-                RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Successfully retrieved calibration files");
-            #else
-                ROS_INFO("Successfully retrieved calibration files");
-            #endif
+            RCLCPP_INFO(odin_logger(), "[Device] Calibration files retrieved");
         } else {
-            #ifdef ROS2
-                RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Skipping calibration retrieval for current device state");
-            #else
-                ROS_INFO("Skipping calibration retrieval for current device state");
-            #endif
+            RCLCPP_INFO(odin_logger(), "[Device] Skip calibration (current state)");
         }
         
         if (std::filesystem::exists(calib_config)) {
             g_renderer = std::make_shared<rawCloudRender>();
             if (g_renderer->init(calib_config)) {
-            #ifdef ROS2
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Point cloud renderer initialized");
-            #else
-                    ROS_INFO("Point cloud renderer initialized");
-            #endif
+                RCLCPP_INFO(odin_logger(), "[阶段] 点云着色已就绪");
             } else {
-            #ifdef ROS2
-                    RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Failed to initialize point cloud renderer");
-            #else
-                    ROS_ERROR("Failed to initialize point cloud renderer");
-            #endif
-                }
+                RCLCPP_ERROR(odin_logger(), "[设备] 点云着色初始化失败");
+            }
         } else {
-            #ifdef ROS2
-                    RCLCPP_WARN(rclcpp::get_logger("device_cb"), "Renderer config file not found: %s", calib_config.c_str());
-            #else
-                    ROS_WARN("Renderer config file not found: %s", calib_config.c_str());
-            #endif
+            RCLCPP_WARN(odin_logger(), "[设备] 未找到着色配置: %s", calib_config.c_str());
         }
         
         if (lidar_set_mode(odinDevice, type)) {
-            #ifdef ROS2
-                RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Set mode failed");
-            #else
-                ROS_ERROR("Set mode failed");
-            #endif
+            RCLCPP_ERROR(odin_logger(), "[设备] 设置模式失败");
             lidar_close_device(odinDevice);
             lidar_destory_device(odinDevice);
             odinDevice = nullptr;
@@ -1256,33 +1000,26 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
 
         // Apply custom parameters after setting mode
         if (g_parser && !g_parser->applyCustomParameters(odinDevice)) {
-            #ifdef ROS2
-                RCLCPP_WARN(rclcpp::get_logger("device_cb"), "Some custom parameters failed to apply");
-            #else
-                ROS_WARN("Some custom parameters failed to apply");
-            #endif
+            RCLCPP_WARN(odin_logger(), "[设备] 部分自定义参数应用失败");
         }
 
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Custom map mode: %d", g_custom_map_mode);
-        #else
-            ROS_INFO("Custom map mode: %d", g_custom_map_mode);
-        #endif
+        RCLCPP_INFO(odin_logger(), "[阶段] 建图模式: %d", g_custom_map_mode);
 
-        if (g_custom_map_mode == 2) {
+        if (g_custom_map_mode == 1) {
+            int save_map_init_value = 0;
+            int result = lidar_set_custom_parameter(odinDevice, "save_map", &save_map_init_value, sizeof(int));
+
+            if (result == 0) {
+                RCLCPP_INFO(odin_logger(), "[命令] save_map 已初始化为 %d", save_map_init_value);
+            } else {
+                RCLCPP_ERROR(odin_logger(), "[命令] save_map 初始化失败: %d", result);
+            } 
+        } else if (g_custom_map_mode == 2) {
             if (g_relocalization_map_abs_path != "" && std::filesystem::exists(g_relocalization_map_abs_path) && 
                 lidar_set_relocalization_map(odinDevice, g_relocalization_map_abs_path.c_str()) == 0) {
-                #ifdef ROS2
-                    RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Relocalization map set successfully");
-                #else
-                    ROS_INFO("Relocalization map set successfully");
-                #endif
+                RCLCPP_INFO(odin_logger(), "[Device] Relocalization map set OK");
             } else {
-                #ifdef ROS2
-                    RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Relocalization map path set fail");
-                #else
-                    ROS_ERROR("Relocalization map path set fail");
-                #endif
+                RCLCPP_ERROR(odin_logger(), "[Device] Relocalization map set failed");
                 lidar_close_device(odinDevice);
                 lidar_destory_device(odinDevice);
                 odinDevice = nullptr;
@@ -1295,11 +1032,7 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
         data_callback_info.user_data = &odinDevice;
 
         if (lidar_register_stream_callback(odinDevice, data_callback_info)) {
-            #ifdef ROS2
-                RCLCPP_ERROR(rclcpp::get_logger("device"), "Register callback failed");
-            #else
-                ROS_ERROR("Register callback failed");
-            #endif
+            RCLCPP_ERROR(odin_logger(), "[设备] 注册回调失败");
             lidar_close_device(odinDevice);
             lidar_destory_device(odinDevice);
             odinDevice = nullptr;
@@ -1317,11 +1050,7 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
         // Open the file in append mode
         dev_status_csv_file = fopen(dev_status_csv_file_path_.c_str(), "a");
         if (!dev_status_csv_file) {
-            #ifdef ROS2
-                RCLCPP_ERROR(rclcpp::get_logger("init"), "Failed to open dev_status CSV file");
-            #else
-                ROS_ERROR("Failed to open dev_status CSV file");
-            #endif
+            RCLCPP_ERROR(odin_logger(), "[初始化] 打开设备状态 CSV 失败");
         } else {
             const char* header =
             "uptime_seconds,package_temp,cpu_temp,center_temp,gpu_temp,npu_temp,dtof_tx_temp,dtof_rx_temp,"
@@ -1335,11 +1064,7 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
 
         uint32_t dtof_subframe_odr = 0;
         if (lidar_start_stream(odinDevice, type, dtof_subframe_odr)) {
-            #ifdef ROS2
-                RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Start stream failed");
-            #else
-                ROS_ERROR("Start stream failed");
-            #endif
+            RCLCPP_ERROR(rclcpp::get_logger("device_cb"), "Start stream failed");
             lidar_close_device(odinDevice);
             lidar_destory_device(odinDevice);
             odinDevice = nullptr;
@@ -1374,33 +1099,17 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
         g_param_monitor_running = true;
         g_param_monitor_thread = std::thread(custom_parameter_monitor);
         
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"),
-                       "Command interface ready. Use: echo 'set save_map 1' > %s", g_command_file_path.c_str());
-        #else
-            ROS_INFO("Command interface ready. Use: echo 'set save_map 1' > %s", g_command_file_path.c_str());
-        #endif 
+        RCLCPP_INFO(odin_logger(), "[阶段] 命令文件已就绪: echo 'set save_map 1' > %s", g_command_file_path.c_str());
         
         bool load_status = g_ros_object->loadCameraParams(calib_config);
         if (g_sendrgb_undistort &&  load_status == 0) {
             g_ros_object->buildUndistortMap();
         }
 
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Software connection successful in %ld seconds", 
-                       std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - software_connect_start).count());
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Device ready and streams activated");
-        #else
-            ROS_INFO("Software connection successful in %ld seconds", 
-                    std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - software_connect_start).count());
-            ROS_INFO("Device ready and streams activated");
-        #endif
+        RCLCPP_INFO(odin_logger(), "%s\n  [Device] Ready in %ld s, streams active\n%s", ODIN_SEP,
+                   std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - software_connect_start).count(), ODIN_SEP);
     } else {
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Device detaching...");
-        #else
-            ROS_INFO("Device detaching...");
-        #endif
+        RCLCPP_INFO(odin_logger(), "[Device] Detaching...");
 
         deviceConnected = false;
         deviceDisconnected = true;
@@ -1420,56 +1129,31 @@ static void lidar_device_callback(const lidar_device_info_t* device, bool attach
             dev_status_csv_file = nullptr;
         }
 
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Waiting for device reconnection...");
-        #else
-            ROS_INFO("Waiting for device reconnection...");
-        #endif
+        RCLCPP_INFO(odin_logger(), "[阶段] 等待设备重新连接...");
     }
 }
 
 int main(int argc, char *argv[])
 {
-#ifdef ROS2
     rclcpp::init(argc, argv);
     auto node = std::make_shared<rclcpp::Node>("lydros_node");
     g_ros_object = std::make_shared<MultiSensorPublisher>(node);
-#else
-    ros::init(argc, argv, "lydros_node");
-    ros::NodeHandle nh;
-    g_ros_object = new MultiSensorPublisher(nh);
-#endif
 
     // Register signal handlers for Ctrl+C
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
     try {
-    #ifdef ROS2
         std::string package_path = get_package_source_directory();
-        // std::cout << "package_path: " << package_path << std::endl;
-    #else
-    	std::string package_path = get_package_share_path("odin_ros_driver");
-    #endif
         std::string config_dir = package_path + "/config";
+        RCLCPP_INFO(odin_logger(), "%s\n  [Odin] package: %s  config: %s\n%s", ODIN_BANNER, package_path.c_str(), config_dir.c_str(), ODIN_SEP);
         std::string config_file = config_dir + "/control_command.yaml";
 
-        // Initialize command file path to /tmp/odin_command.txt
         g_command_file_path = "/tmp/odin_command.txt";
-
-        // #ifdef ROS2
-        //     RCLCPP_INFO(rclcpp::get_logger("init"), "Command file path set to: %s", g_command_file_path.c_str());
-        // #else
-        //     ROS_INFO("Command file path set to: %s", g_command_file_path.c_str());
-        // #endif
 
         g_parser = std::make_shared<odin_ros_driver::YamlParser>(config_file);
         if (!g_parser->loadConfig()) {
-            #ifdef ROS2
-                RCLCPP_ERROR(node->get_logger(), "Failed to load config file: %s", config_file.c_str());
-            #else
-                ROS_ERROR("Failed to load config file: %s", config_file.c_str());
-            #endif
+            RCLCPP_ERROR(odin_logger(), "[初始化] 配置加载失败: %s", config_file.c_str());
             return -1;
         }
 
@@ -1527,30 +1211,24 @@ int main(int argc, char *argv[])
         std::string data_dir = "";
         std::string log_dir = "";
         std::string map_dir = "";
-        #ifdef ROS2
-            char* ros_workspace = std::getenv("COLCON_PREFIX_PATH");
-            if (ros_workspace) {
-                std::string workspace_path(ros_workspace);
-                size_t pos = workspace_path.find("/install");
-                if (pos != std::string::npos) {
-                    data_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/recorddata";
-                    log_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/log";
-                    map_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/map";
-                } else {
-                    data_dir = ament_index_cpp::get_package_share_directory(package_name) + "/recorddata";
-                    log_dir = ament_index_cpp::get_package_share_directory(package_name) + "/log";
-                    map_dir = ament_index_cpp::get_package_share_directory(package_name) + "/map";
-                }
+        char* ros_workspace = std::getenv("COLCON_PREFIX_PATH");
+        if (ros_workspace) {
+            std::string workspace_path(ros_workspace);
+            size_t pos = workspace_path.find("/install");
+            if (pos != std::string::npos) {
+                data_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/recorddata";
+                log_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/log";
+                map_dir = workspace_path.substr(0, pos) + "/src/odin_ros_driver/map";
             } else {
                 data_dir = ament_index_cpp::get_package_share_directory(package_name) + "/recorddata";
                 log_dir = ament_index_cpp::get_package_share_directory(package_name) + "/log";
                 map_dir = ament_index_cpp::get_package_share_directory(package_name) + "/map";
             }
-        #else
-            data_dir = ros::package::getPath(package_name) + "/recorddata";
-            log_dir = ros::package::getPath(package_name) + "/log";
-            map_dir = ros::package::getPath(package_name) + "/map";
-        #endif
+        } else {
+            data_dir = ament_index_cpp::get_package_share_directory(package_name) + "/recorddata";
+            log_dir = ament_index_cpp::get_package_share_directory(package_name) + "/log";
+            map_dir = ament_index_cpp::get_package_share_directory(package_name) + "/map";
+        }
 
         if (g_record_data) {
             g_ros_object->initialize_data_logger(data_dir);
@@ -1578,11 +1256,7 @@ int main(int argc, char *argv[])
         }
 
         if (lidar_system_init(lidar_device_callback)) {
-            #ifdef ROS2
-                RCLCPP_ERROR(node->get_logger(), "Lidar system init failed");
-            #else
-                ROS_ERROR("Lidar system init failed");
-            #endif
+            RCLCPP_ERROR(odin_logger(), "[Init] Lidar system init failed");
             return -1;
         }
         
@@ -1590,16 +1264,9 @@ int main(int argc, char *argv[])
         bool usbPresent = false;
         bool usbVersionChecked = false; 
         while (!deviceConnected) {
-            #ifdef ROS2
             if (!rclcpp::ok()) {
                 break;
             }
-            #else
-            if (!ros::ok())     // ROS1 shutdown check
-            {
-                break;
-            }
-            #endif
 
             usbPresent = isUsbDevicePresent(TARGET_VENDOR, TARGET_PRODUCT); 
             if (usbPresent) { 
@@ -1607,122 +1274,64 @@ int main(int argc, char *argv[])
                     usbVersionChecked = true;
                     
                     if (!isUsb3OrHigher(TARGET_VENDOR, TARGET_PRODUCT)) {
-                        #ifdef ROS2
-                            RCLCPP_FATAL(node->get_logger(), 
-                                        "Device connected to USB 2.0 port. This device requires USB 3.0 or higher. Exiting program.Please use USB 3.0 and restart the device.");
-                        #else
-                            ROS_FATAL("Device connected to USB 2.0 port. This device requires USB 3.0 or higher. Exiting program .Please use USB 3.0 and restart the device.");
-                        #endif
-                        
+                        RCLCPP_FATAL(odin_logger(), "[USB] 设备接在 USB 2.0 上，需 USB 3.0。程序退出。");
                         lidar_system_deinit();
                         return 1;
                     }
                 }
             }
             
-            #ifdef ROS2
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            #else
-                ros::Duration(1.0).sleep();
-            #endif
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     } catch (const std::exception& e) {
-        #ifdef ROS2
-                RCLCPP_ERROR(node->get_logger(), "Exception: %s", e.what());
-        #else
-                ROS_ERROR("Exception: %s", e.what());
-        #endif
-                lidar_system_deinit();
-                return -1;
+        RCLCPP_ERROR(odin_logger(), "[初始化] 异常: %s", e.what());
+        lidar_system_deinit();
+        return -1;
     }
 
     if (!deviceConnected) {
-        #ifdef ROS2
         if (g_ros_object) {
             g_ros_object.reset();   // destroys all publishers/subscribers
         }
         node.reset();              // destroy the node first
         rclcpp::shutdown();
-        #else
-        if (g_ros_object) {
-            delete g_ros_object;
-            g_ros_object = nullptr;
-        }
-        ros::shutdown();
-        #endif
         return 1;
     }
 
     bool disconnect_msg_printed = false;
-    #ifdef ROS2
-        // Create 10Hz Rate object
-        rclcpp::Rate rate(10);
+    // Create 10Hz Rate object
+    rclcpp::Rate rate(10);
+    
+    while (rclcpp::ok()) {
+        rclcpp::spin_some(node);
+        // Check device disconnection status
+        if (deviceDisconnected.load()) {
+            if (!disconnect_msg_printed) {
+                RCLCPP_INFO(odin_logger(), "[Device] Disconnected, waiting for reconnection...");
+                disconnect_msg_printed = true;
+            }
+            
+            // Wait 0.1 seconds
+            rate.sleep();
+            continue;  // Skip rest of this loop iteration
+        }
         
-        while (rclcpp::ok()) {
-            rclcpp::spin_some(node);
-            // Check device disconnection status
-            if (deviceDisconnected.load()) {
-                if (!disconnect_msg_printed) {
-                    RCLCPP_INFO(node->get_logger(), "Device disconnected, waiting for reconnection...");
-                    disconnect_msg_printed = true;
-                }
-                
-                // Wait 0.1 seconds
-                rate.sleep();
-                continue;  // Skip rest of this loop iteration
-            }
-            
-            // Data processing when device is connected
-            if (g_sendcloudrender) {
-                g_ros_object->try_process_pair();  
-            }
-            
-            // Check for command file
-            if (deviceConnected) {
-                process_command_file();
-            }
-            
-            disconnect_msg_printed = false;
-
-            // Wait 0.1 seconds
-            rate.sleep();
+        // Data processing when device is connected
+        if (g_sendcloudrender) {
+            g_ros_object->try_process_pair();  
         }
-        rclcpp::shutdown();
-    #else
-        // Create 10Hz Rate object
-        ros::Rate rate(10);
-        while (ros::ok()) {
-            ros::spinOnce();
-
-            // Check device disconnection status
-            if (deviceDisconnected.load()) {
-                if (!disconnect_msg_printed) {
-                    ROS_INFO("Device disconnected, waiting for reconnection...");
-                    disconnect_msg_printed = true;
-                }
-                
-                // Wait 0.1 seconds
-                rate.sleep();
-                continue;  // Skip rest of this loop iteration
-            }
-            
-            // Data processing when device is connected
-            if (g_sendcloudrender) {
-                g_ros_object->try_process_pair();  
-            }
-            
-            // Check for command file
-            if (deviceConnected) {
-                process_command_file();
-            }
-            
-            disconnect_msg_printed = false;
-
-            // Wait 0.1 seconds
-            rate.sleep();
+        
+        // Check for command file
+        if (deviceConnected) {
+            process_command_file();
         }
-        ros::shutdown();
-    #endif
+        
+        disconnect_msg_printed = false;
+
+        // Wait 0.1 seconds
+        rate.sleep();
+    }
+    rclcpp::shutdown();
 
     // Cleanup on normal program exit
     if (odinDevice) {
@@ -1731,35 +1340,11 @@ int main(int argc, char *argv[])
             const std::filesystem::path out_path = g_ros_object->get_root_dir() / "image" / "cam_in_ex.txt";
             (void)convert_calib_to_cam_in_ex(calib_file_, out_path);
         }
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "pose_index: %d", g_ros_object->get_pose_index());
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "cloud_index: %d", g_ros_object->get_cloud_index());
-            RCLCPP_INFO(rclcpp::get_logger("device_cb"), "image_index: %d", g_ros_object->get_image_index());
-        #else
-            ROS_INFO("pose_index: %d", g_ros_object->get_pose_index());
-            ROS_INFO("cloud_index: %d", g_ros_object->get_cloud_index());
-            ROS_INFO("image_index: %d", g_ros_object->get_image_index());
-        #endif
-        // Perform cleanup on normal exit
-        // if(lidar_stop_stream(odinDevice, LIDAR_MODE_SLAM))
-        // {
-        //     #ifdef ROS2
-        //         RCLCPP_INFO(rclcpp::get_logger("device_cb"), "lidar_stop_stream failed");
-        //     #else
-        //         ROS_INFO("lidar_stop_stream failed");
-        //     #endif
-        // }
-        
-        if(lidar_unregister_stream_callback(odinDevice))
-        {
-            #ifdef ROS2
-                RCLCPP_INFO(rclcpp::get_logger("device_cb"), "lidar_unregister_stream_callback failed");
-            #else
-                ROS_INFO("lidar_unregister_stream_callback failed");
-            #endif
+        RCLCPP_INFO(odin_logger(), "[退出] 统计: pose=%d cloud=%d image=%d",
+            g_ros_object->get_pose_index(), g_ros_object->get_cloud_index(), g_ros_object->get_image_index());
+        if(lidar_unregister_stream_callback(odinDevice)) {
+            RCLCPP_WARN(odin_logger(), "[退出] 注销数据流回调失败");
         }
-        // lidar_close_device(odinDevice);
-        // lidar_destory_device(odinDevice);
 
         if (dev_status_csv_file) {
             std::fflush(dev_status_csv_file);
@@ -1773,11 +1358,8 @@ int main(int argc, char *argv[])
     if (g_param_monitor_thread.joinable()) {
         g_param_monitor_thread.join();
     }
-    
-    
+      
     // lidar_system_deinit();
-
-
 
     return 0;
 }

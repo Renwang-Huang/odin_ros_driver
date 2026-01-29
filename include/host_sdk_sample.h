@@ -1,15 +1,3 @@
-/*
-Copyright 2025 Manifold Tech Ltd.(www.manifoldtech.com.co)
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-   http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
 #pragma once
 
 #include <chrono>
@@ -70,88 +58,55 @@ enum class OdometryType {
 
 extern int g_log_level;
 extern int g_sendcloudrender;
-#ifdef ROS2
 
-    #include "rclcpp/rclcpp.hpp"
-    #include "std_msgs/msg/string.hpp"
-    #include <std_msgs/msg/header.hpp>
-    #include <visualization_msgs/msg/marker_array.hpp>
-    #include "sensor_msgs/msg/image.hpp"
-    #include "sensor_msgs/msg/imu.hpp"
-    #include "sensor_msgs/msg/point_cloud2.hpp"
-    #include "sensor_msgs/point_cloud2_iterator.hpp"
-    #include <sensor_msgs/msg/compressed_image.hpp>
-    #include <builtin_interfaces/msg/time.hpp>
-    #include <nav_msgs/msg/odometry.hpp>
-    #include <nav_msgs/msg/path.hpp>
-    #include <sensor_msgs/msg/point_field.hpp>
-    #include "tf2/LinearMath/Quaternion.h"
-    #include "tf2_ros/transform_broadcaster.h"
-    namespace ros {
-        using namespace rclcpp;
-        using namespace std_msgs::msg;
-        using namespace sensor_msgs::msg;
-        using namespace nav_msgs::msg;
-        using namespace visualization_msgs::msg;
-        using Time = builtin_interfaces::msg::Time;
+// ROS2 includes
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
+#include <std_msgs/msg/header.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+#include "sensor_msgs/point_cloud2_iterator.hpp"
+#include <sensor_msgs/msg/compressed_image.hpp>
+#include <builtin_interfaces/msg/time.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <sensor_msgs/msg/point_field.hpp>
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2_ros/transform_broadcaster.h"
+#include "ament_index_cpp/get_package_share_directory.hpp"
+
+namespace ros {
+    using namespace rclcpp;
+    using namespace std_msgs::msg;
+    using namespace sensor_msgs::msg;
+    using namespace nav_msgs::msg;
+    using namespace visualization_msgs::msg;
+    using Time = builtin_interfaces::msg::Time;
+}
+
+// Logging macros for ROS2
+#define LOG_ERROR(...) \
+    if (g_log_level >= LOG_LEVEL_ERROR) { \
+        RCLCPP_ERROR(rclcpp::get_logger("odin_driver"), __VA_ARGS__); \
     }
-    
-
-    #define LOG_ERROR(...)
-    #define LOG_WARN(...)
-    #define LOG_INFO(...)
-    #define LOG_DEBUG(...)
-#else
-
-    #include <ros/ros.h>
-    #include <ros/package.h>
-    #include <sensor_msgs/Image.h>
-    #include <std_msgs/Header.h>
-    #include <sensor_msgs/Imu.h>
-    #include <sensor_msgs/PointCloud2.h>
-    #include <sensor_msgs/point_cloud2_iterator.h>
-    #include <sensor_msgs/CompressedImage.h>
-    #include <nav_msgs/Odometry.h>
-    #include <nav_msgs/Path.h>
-    #include <sensor_msgs/Image.h>
-    #include <tf2_ros/transform_broadcaster.h>
-    #include <tf2/LinearMath/Quaternion.h>
-    #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-    namespace ros {
-        using namespace ::ros;
-        using namespace sensor_msgs;
-        using namespace nav_msgs;
+#define LOG_WARN(...) \
+    if (g_log_level >= LOG_LEVEL_WARN) { \
+        RCLCPP_WARN(rclcpp::get_logger("odin_driver"), __VA_ARGS__); \
     }
-    
-
-    #define LOG_ERROR(...) \
-        if (g_log_level >= LOG_LEVEL_ERROR) { \
-            ROS_ERROR(__VA_ARGS__); \
-        }
-    #define LOG_WARN(...) \
-        if (g_log_level >= LOG_LEVEL_WARN) { \
-            ROS_WARN(__VA_ARGS__); \
-        }
-    #define LOG_INFO(...) \
-        if (g_log_level >= LOG_LEVEL_INFO) { \
-            ROS_INFO(__VA_ARGS__); \
-        }
-    #define LOG_DEBUG(...) \
-        if (g_log_level >= LOG_LEVEL_DEBUG) { \
-            ROS_DEBUG(__VA_ARGS__); \
-        }
-#endif
-
-
-#ifdef ROS2
-    namespace sensor_msgs {
-        using PointField = msg::PointField;
+#define LOG_INFO(...) \
+    if (g_log_level >= LOG_LEVEL_INFO) { \
+        RCLCPP_INFO(rclcpp::get_logger("odin_driver"), __VA_ARGS__); \
     }
-#else
-    namespace sensor_msgs {
-        using PointField = ::sensor_msgs::PointField;
+#define LOG_DEBUG(...) \
+    if (g_log_level >= LOG_LEVEL_DEBUG) { \
+        RCLCPP_DEBUG(rclcpp::get_logger("odin_driver"), __VA_ARGS__); \
     }
-#endif
+
+namespace sensor_msgs {
+    using PointField = msg::PointField;
+}
 
 // Common definitions
 #define PAI 3.14159265358979323846
@@ -159,22 +114,13 @@ extern int g_sendcloudrender;
 // Common functions
 inline ros::Time ns_to_ros_time(uint64_t timestamp_ns) {
     ros::Time t;
-    #ifdef ROS2
-        t.sec = static_cast<int32_t>(timestamp_ns / 1000000000);
-        t.nanosec = static_cast<uint32_t>(timestamp_ns % 1000000000);
-    #else
-        t.sec = static_cast<uint32_t>(timestamp_ns / 1000000000);
-        t.nsec = static_cast<uint32_t>(timestamp_ns % 1000000000);
-    #endif
+    t.sec = static_cast<int32_t>(timestamp_ns / 1000000000);
+    t.nanosec = static_cast<uint32_t>(timestamp_ns % 1000000000);
     return t;
 }
 
 inline uint64_t ros_time_to_ns(const ros::Time &t) {
-    #ifdef ROS2
-        return static_cast<uint64_t>(t.sec) * 1000000000ULL + t.nanosec;
-    #else
-        return static_cast<uint64_t>(t.sec) * 1000000000ULL + t.nsec;
-    #endif
+    return static_cast<uint64_t>(t.sec) * 1000000000ULL + t.nanosec;
 }
 
 class RosNodeControlInterface {
@@ -193,19 +139,11 @@ RosNodeControlInterface* getRosNodeControl();
 // Multi-sensor publisher class
 class MultiSensorPublisher {
 public:
-    #ifdef ROS2
-        MultiSensorPublisher(rclcpp::Node::SharedPtr node)
-            : node_(node),cameraposevisual_ {1.0f, 0.0f, 0.0f, 1.0f} {
-            initialize_publishers();
-            // initialize_data_logger();
-        }
-    #else
-        MultiSensorPublisher(ros::NodeHandle& nh)
-            : cameraposevisual_(1.0f, 0.0f, 0.0f, 1.0f) {
-            initialize_publishers(nh);
-            // initialize_data_logger();
-        }
-    #endif
+    MultiSensorPublisher(rclcpp::Node::SharedPtr node)
+        : node_(node),cameraposevisual_ {1.0f, 0.0f, 0.0f, 1.0f} {
+        initialize_publishers();
+        // initialize_data_logger();
+    }
     
     std::filesystem::path get_root_dir() const { return root_dir_; }
 
@@ -231,18 +169,10 @@ public:
  
     rawCloudRender render_;
     void publishImu(imu_convert_data_t *stream) {
-        #ifdef ROS2
-            sensor_msgs::msg::Imu imu_msg;
-        #else
-            ros::Imu imu_msg;
-        #endif
+        sensor_msgs::msg::Imu imu_msg;
         
         if (getRosNodeControl()->useHostRosTime()) {
-            #ifdef ROS2
-                imu_msg.header.stamp = node_->now();
-            #else
-                imu_msg.header.stamp = ros::Time::now();
-            #endif
+            imu_msg.header.stamp = node_->now();
         } else {
             imu_msg.header.stamp = ns_to_ros_time(stream->stamp);
         }
@@ -261,23 +191,13 @@ public:
         imu_msg.orientation.z = 0.0;
         imu_msg.orientation.w = 1.0;
         
-        #ifdef ROS2
-            imu_pub_->publish(std::move(imu_msg));
-        #else
-            imu_pub_.publish(imu_msg);
-        #endif
+        imu_pub_->publish(std::move(imu_msg));
     }
-#ifdef ROS2
+    
     using ImageMsg = sensor_msgs::msg::Image;
     using PointCloud2Msg = sensor_msgs::msg::PointCloud2;
     using ImageConstPtr = ImageMsg::ConstSharedPtr;
     using PointCloud2ConstPtr = PointCloud2Msg::ConstSharedPtr;
-#else
-    using ImageMsg = sensor_msgs::Image;
-    using PointCloud2Msg = sensor_msgs::PointCloud2;
-    using ImageConstPtr = sensor_msgs::ImageConstPtr;
-    using PointCloud2ConstPtr = sensor_msgs::PointCloud2ConstPtr;
-#endif
 void try_process_pair() {
     // Record queue status
     size_t rgb_size, pcd_size;
@@ -354,9 +274,6 @@ bool validate_render_parameters(std::vector<std::vector<float>>& rgb_image,
 {
     // 1. Check RGB image validity
     if (rgb_image.empty()) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid RGB image: empty vector");
-        #endif
         return false;
     }
     
@@ -365,43 +282,26 @@ bool validate_render_parameters(std::vector<std::vector<float>>& rgb_image,
     const size_t width = (height > 0) ? rgb_image[0].size() : 0;
     
     if (height == 0 || width == 0) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid RGB image dimensions: %zux%zu", 
-                     height, width);
-        #endif
         return false;
     }
     
     // 2. Check point cloud stream pointer validity
     if (!cloud_stream) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid cloud stream: null pointer");
-        #endif
         return false;
     }
     
     // 3. Check point cloud index validity
     if (pcd_idx < 0 || pcd_idx >= 10) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid pcd index: %d (must be 0-9)", pcd_idx);
-        #endif
         return false;
     }
     
     // 4. Check point cloud data validity
     buffer_List_t& cloud = cloud_stream->imageList[pcd_idx];
     if (!cloud.pAddr) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid cloud data: null pointer");
-        #endif
         return false;
     }
     
     if (cloud.width <= 0 || cloud.height <= 0) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid cloud dimensions: %dx%d", 
-                     cloud.width, cloud.height);
-        #endif
         return false;
     }
     
@@ -417,10 +317,6 @@ void process_pair(const ImageConstPtr &rgb_msg, const PointCloud2ConstPtr &pcd_m
 
     // Verify input image format
     if (rgb_msg->encoding != "bgr8") {
-        #ifndef ROS2
-            ROS_ERROR("Unsupported image format: %s. Only bgr8 is supported.", 
-                      rgb_msg->encoding.c_str());
-        #endif
         return;
     }
 
@@ -503,11 +399,7 @@ void process_pair(const ImageConstPtr &rgb_msg, const PointCloud2ConstPtr &pcd_m
             *iter_res_rgb = rgbCloud_flat[4*i+3]; ++iter_res_rgb;
         }
 
-        #ifdef ROS2
-            rgbcloud_pub_->publish(output_msg);
-        #else
-            rgbcloud_pub_.publish(output_msg);
-        #endif
+        rgbcloud_pub_->publish(output_msg);
     } 
 }
 
@@ -515,43 +407,25 @@ void publishIntensityCloud(capture_Image_List_t* stream, int idx)
 {
     // Check index validity
     if (idx < 0 || idx >= 10) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid index %d for intensity cloud", idx);
-        #endif
         return;
     }
 
     // Check point cloud data validity
     buffer_List_t &cloud = stream->imageList[idx];
     if (!cloud.pAddr) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid point cloud: null data pointer at index %d", idx);
-        #endif
         return;
     }
  
     if (cloud.width <= 0 || cloud.height <= 0) {
-        #ifndef ROS2
-            ROS_ERROR("Invalid point cloud dimensions: %dx%d at index %d", 
-                     cloud.width, cloud.height, idx);
-        #endif
         return;
     }
 
-    #ifdef ROS2
-        auto msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
-    #else
-        auto msg = boost::make_shared<sensor_msgs::PointCloud2>();
-    #endif
+    auto msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
 
     // Set message header
     msg->header.frame_id = "odin1_base_link";
     if (getRosNodeControl()->useHostRosTime()) {
-        #ifdef ROS2
-            msg->header.stamp = node_->now();
-        #else
-            msg->header.stamp = ros::Time::now();
-        #endif
+        msg->header.stamp = node_->now();
     } else {
         msg->header.stamp = ns_to_ros_time(cloud.timestamp);
     }
@@ -649,12 +523,7 @@ void publishIntensityCloud(capture_Image_List_t* stream, int idx)
         // Get actual point count
         const int real_point_count = cloud.width * cloud.height;  
         // Create deep copy of point cloud
-        #ifdef ROS2
-            auto msg_copy = std::make_shared<sensor_msgs::msg::PointCloud2>(*msg);
-        #else
-            auto msg_copy = boost::make_shared<sensor_msgs::PointCloud2>();
-            *msg_copy = *msg;  // Deep copy
-        #endif
+        auto msg_copy = std::make_shared<sensor_msgs::msg::PointCloud2>(*msg);
         
         // Queue management
         if (pcd_queue_.size() >= 10) {
@@ -666,21 +535,13 @@ void publishIntensityCloud(capture_Image_List_t* stream, int idx)
     }
 
     // Publish point cloud
-    #ifdef ROS2
-        cloud_pub_->publish(*msg);
-    #else
-        cloud_pub_.publish(msg);
-    #endif
+    cloud_pub_->publish(*msg);
 }
 
 void publishGrayUInt8(capture_Image_List_t *stream, int idx) {
     ImageMsg msg;
     if (getRosNodeControl()->useHostRosTime()) {
-        #ifdef ROS2
-            msg.header.stamp = node_->now();
-        #else
-            msg.header.stamp = ros::Time::now();
-        #endif
+        msg.header.stamp = node_->now();
     } else {
         msg.header.stamp = ns_to_ros_time(stream->imageList[idx].timestamp);
     }
@@ -701,11 +562,7 @@ void publishGrayUInt8(capture_Image_List_t *stream, int idx) {
 
     memcpy(msg.data.data(), stream->imageList[idx].pAddr, image_size);
 
-    #ifdef ROS2
-        intensity_gray_pub_->publish(msg);
-    #else
-        intensity_gray_pub_.publish(msg);
-    #endif
+    intensity_gray_pub_->publish(msg);
 }
 
 void publishRgb(capture_Image_List_t *stream) {
@@ -713,11 +570,7 @@ void publishRgb(capture_Image_List_t *stream) {
 
     // old version yuv data
     if (image.length == image.width * image.height * 3 / 2) {
-        #ifdef ROS2
-            RCLCPP_INFO(rclcpp::get_logger("publishRgb"), "old format rgb data, please upgrade device firmware");
-        #else
-            ROS_INFO("old format rgb data, please upgrade device firmware");
-        #endif
+        RCLCPP_INFO(rclcpp::get_logger("publishRgb"), "old format rgb data, please upgrade device firmware");
     } else {// new version jpeg data
 
         std::vector<uint8_t> jpeg_data(static_cast<uint8_t*>(image.pAddr),
@@ -728,11 +581,7 @@ void publishRgb(capture_Image_List_t *stream) {
 
         cv_bridge::CvImage cv_image;
         if (getRosNodeControl()->useHostRosTime()) {
-            #ifdef ROS2
-                cv_image.header.stamp = node_->now();
-            #else
-                cv_image.header.stamp = ros::Time::now();
-            #endif
+            cv_image.header.stamp = node_->now();
         } else {
             cv_image.header.stamp = ns_to_ros_time(stream->imageList[0].timestamp);
         }
@@ -772,11 +621,7 @@ void publishRgb(capture_Image_List_t *stream) {
         if (m_undistort_map_init_success) {
             cv::remap(decoded_image, undistorted_image, m_undistort_map_x, m_undistort_map_y, cv::INTER_LINEAR);
             if (getRosNodeControl()->useHostRosTime()) {
-                #ifdef ROS2
-                    cv_undistorted_image.header.stamp = node_->now();
-                #else
-                    cv_undistorted_image.header.stamp = ros::Time::now();
-                #endif
+                cv_undistorted_image.header.stamp = node_->now();
             } else {
                 cv_undistorted_image.header.stamp = ns_to_ros_time(stream->imageList[0].timestamp);
             }
@@ -784,45 +629,22 @@ void publishRgb(capture_Image_List_t *stream) {
             cv_undistorted_image.image = undistorted_image;
         }
 
-        #ifdef ROS2
-        {
-            rgb_pub_->publish(*cv_image.toImageMsg());
-            if (m_undistort_map_init_success) {
-                undistort_rgb_pub_->publish(*cv_undistorted_image.toImageMsg());
-            }
-
-            // original jpeg
-            sensor_msgs::msg::CompressedImage jpeg_msg;
-            if (getRosNodeControl()->useHostRosTime()) {
-                jpeg_msg.header.stamp = node_->now();
-            } else {
-                jpeg_msg.header.stamp = ns_to_ros_time(stream->imageList[0].timestamp);
-            }
-            jpeg_msg.format = "jpeg";
-            jpeg_msg.data = jpeg_data;
-
-            compressed_rgb_pub_->publish(jpeg_msg);
+        rgb_pub_->publish(*cv_image.toImageMsg());
+        if (m_undistort_map_init_success) {
+            undistort_rgb_pub_->publish(*cv_undistorted_image.toImageMsg());
         }
-        #else
-        {
-            rgb_pub_.publish(cv_image.toImageMsg());
-            if (m_undistort_map_init_success) {
-                undistort_rgb_pub_.publish(cv_undistorted_image.toImageMsg());
-            }
 
-            // original jpeg
-            sensor_msgs::CompressedImagePtr jpeg_msg(new sensor_msgs::CompressedImage());
-            if (getRosNodeControl()->useHostRosTime()) {
-                jpeg_msg->header.stamp = ros::Time::now();
-            } else {
-                jpeg_msg->header.stamp = ns_to_ros_time(stream->imageList[0].timestamp);
-            }
-            jpeg_msg->format = "jpeg";
-            jpeg_msg->data = jpeg_data;
-
-            compressed_rgb_pub_.publish(jpeg_msg);
+        // original jpeg
+        sensor_msgs::msg::CompressedImage jpeg_msg;
+        if (getRosNodeControl()->useHostRosTime()) {
+            jpeg_msg.header.stamp = node_->now();
+        } else {
+            jpeg_msg.header.stamp = ns_to_ros_time(stream->imageList[0].timestamp);
         }
-        #endif
+        jpeg_msg.format = "jpeg";
+        jpeg_msg.data = jpeg_data;
+
+        compressed_rgb_pub_->publish(jpeg_msg);
     }
 
 }
@@ -830,69 +652,37 @@ void publishRgb(capture_Image_List_t *stream) {
 
     void publishPC2XYZRGBA(capture_Image_List_t* stream, int idx) 
     {
-        #ifdef ROS2
-                sensor_msgs::msg::PointCloud2 msg;
-                msg.header.frame_id = "odom";
-                if (getRosNodeControl()->useHostRosTime()) {
-                    msg.header.stamp = node_->now();
-                } else {
-                    msg.header.stamp = ns_to_ros_time(stream->imageList[0].timestamp);
-                }
+        sensor_msgs::msg::PointCloud2 msg;
+        msg.header.frame_id = "odom";
+        if (getRosNodeControl()->useHostRosTime()) {
+            msg.header.stamp = node_->now();
+        } else {
+            msg.header.stamp = ns_to_ros_time(stream->imageList[0].timestamp);
+        }
 
-                //RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Point cloudrgba %ld",stream->imageList[0].timestamp);
+        //RCLCPP_INFO(rclcpp::get_logger("device_cb"), "Point cloudrgba %ld",stream->imageList[0].timestamp);
 
-                size_t pt_size = sizeof(int32_t) * 3 + sizeof(int32_t) * 4;
-                uint32_t points = stream->imageList[idx].length / pt_size;
+        size_t pt_size = sizeof(int32_t) * 3 + sizeof(int32_t) * 4;
+        uint32_t points = stream->imageList[idx].length / pt_size;
 
-                msg.height = 1;
-                msg.width = points;
-                msg.is_dense = false;
+        msg.height = 1;
+        msg.width = points;
+        msg.is_dense = false;
 
-                sensor_msgs::PointCloud2Modifier modifier(msg);
-                modifier.setPointCloud2Fields(
-                    4,
-                    "x", 1, sensor_msgs::msg::PointField::FLOAT32,
-                    "y", 1, sensor_msgs::msg::PointField::FLOAT32,
-                    "z", 1, sensor_msgs::msg::PointField::FLOAT32,
-                    "rgb", 1, sensor_msgs::msg::PointField::FLOAT32
-                );
-                modifier.resize(msg.width * msg.height);
+        sensor_msgs::PointCloud2Modifier modifier(msg);
+        modifier.setPointCloud2Fields(
+            4,
+            "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+            "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+            "z", 1, sensor_msgs::msg::PointField::FLOAT32,
+            "rgb", 1, sensor_msgs::msg::PointField::FLOAT32
+        );
+        modifier.resize(msg.width * msg.height);
 
-                sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
-                sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
-                sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
-                sensor_msgs::PointCloud2Iterator<float> iter_rgb(msg, "rgb");
-        #else
-            sensor_msgs::PointCloud2 msg;
-            msg.header.frame_id = "odom";
-            if (getRosNodeControl()->useHostRosTime()) {
-                msg.header.stamp = ros::Time::now();
-            } else {
-                msg.header.stamp = ns_to_ros_time(stream->imageList[0].timestamp);
-            }
-            
-            size_t pt_size = sizeof(int32_t) * 3 + sizeof(int32_t) * 4;
-            uint32_t points = stream->imageList[idx].length / pt_size;
-            
-            msg.height = 1;
-            msg.width = points;
-            msg.is_dense = false;
-            
-            sensor_msgs::PointCloud2Modifier modifier(msg);
-            modifier.setPointCloud2Fields(
-                4,
-                "x", 1, sensor_msgs::PointField::FLOAT32,
-                "y", 1, sensor_msgs::PointField::FLOAT32,
-                "z", 1, sensor_msgs::PointField::FLOAT32,
-                "rgb", 1, sensor_msgs::PointField::FLOAT32
-            );
-            modifier.resize(msg.width * msg.height);
-            
-            sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
-            sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
-            sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
-            sensor_msgs::PointCloud2Iterator<float> iter_rgb(msg, "rgb");
-        #endif
+        sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
+        sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
+        sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
+        sensor_msgs::PointCloud2Iterator<float> iter_rgb(msg, "rgb");
         
         // Shared data processing logic
         int32_t* xyz_data = static_cast<int32_t*>(stream->imageList[idx].pAddr);
@@ -900,15 +690,9 @@ void publishRgb(capture_Image_List_t *stream) {
         for(uint32_t i = 0; i < points; i++) {
             int32_t* ptr = xyz_data + 7*i;
             
-#ifdef ROS2
-                *iter_x = static_cast<float>(ptr[0]) / 10000.0f; ++iter_x;
-                *iter_y = static_cast<float>(ptr[1]) / 10000.0f; ++iter_y;
-                *iter_z = static_cast<float>(ptr[2]) / 10000.0f; ++iter_z;
-#else
-                *iter_x = (1.0 * ptr[0]) / 1e4; ++iter_x;
-                *iter_y = (1.0 * ptr[1]) / 1e4; ++iter_y;
-                *iter_z = (1.0 * ptr[2]) / 1e4; ++iter_z;
-#endif
+            *iter_x = static_cast<float>(ptr[0]) / 10000.0f; ++iter_x;
+            *iter_y = static_cast<float>(ptr[1]) / 10000.0f; ++iter_y;
+            *iter_z = static_cast<float>(ptr[2]) / 10000.0f; ++iter_z;
             
             uint8_t r = ptr[3] & 0xff;
             uint8_t g = ptr[4] & 0xff;
@@ -959,39 +743,27 @@ void publishRgb(capture_Image_List_t *stream) {
             data_logger_->enqueuePointCloudFrame(std::move(blob));
         }
         
-#ifdef ROS2
-            xyzrgbacloud_pub_->publish(std::move(msg));
-#else
-            xyzrgbacloud_pub_.publish(msg);
-#endif
+        xyzrgbacloud_pub_->publish(std::move(msg));
     }
 
     void publishOdometry(capture_Image_List_t* stream, OdometryType odom_type, bool show_path, bool show_camerapose) {
         
-#ifdef ROS2
-            auto msg = nav_msgs::msg::Odometry();
-#else
-            ros::Odometry msg;
-#endif
+        auto msg = nav_msgs::msg::Odometry();
         
-            msg.header.frame_id = "odom";
-            msg.child_frame_id = "odin1_base_link";
+        msg.header.frame_id = "odom";
+        msg.child_frame_id = "odin1_base_link";
 
-            //RCLCPP_INFO(rclcpp::get_logger("device_cb"), "odom %ld",odom_data->timestamp_ns);
+        //RCLCPP_INFO(rclcpp::get_logger("device_cb"), "odom %ld",odom_data->timestamp_ns);
 
-            uint32_t data_len = stream->imageList[0].length;
-            if (data_len == sizeof(ros_odom_convert_complete_t)) {
+        uint32_t data_len = stream->imageList[0].length;
+        if (data_len == sizeof(ros_odom_convert_complete_t)) {
 
-                ros_odom_convert_complete_t* odom_data = (ros_odom_convert_complete_t*)stream->imageList[0].pAddr;
-                if (getRosNodeControl()->useHostRosTime()) {
-                    #ifdef ROS2
-                        msg.header.stamp = node_->now();
-                    #else
-                        msg.header.stamp = ros::Time::now();
-                    #endif
-                } else {
-                    msg.header.stamp = ns_to_ros_time(odom_data->timestamp_ns);
-                }
+            ros_odom_convert_complete_t* odom_data = (ros_odom_convert_complete_t*)stream->imageList[0].pAddr;
+            if (getRosNodeControl()->useHostRosTime()) {
+                msg.header.stamp = node_->now();
+            } else {
+                msg.header.stamp = ns_to_ros_time(odom_data->timestamp_ns);
+            }
 
                 msg.pose.pose.position.x = static_cast<double>(odom_data->pos[0]) / 1e6;
                 msg.pose.pose.position.y = static_cast<double>(odom_data->pos[1]) / 1e6;
@@ -1043,18 +815,14 @@ void publishRgb(capture_Image_List_t *stream) {
                     0.0, 0.0, 0.0, static_cast<double>(odom_data->cov[15]) / 1e9, static_cast<double>(odom_data->cov[16]) / 1e9, static_cast<double>(odom_data->cov[17]) / 1e9,
                 };
             
-            } else if (data_len == sizeof(ros2_odom_convert_t)) {
+        } else if (data_len == sizeof(ros2_odom_convert_t)) {
 
-                ros2_odom_convert_t* odom_data = (ros2_odom_convert_t*)stream->imageList[0].pAddr;
-                if (getRosNodeControl()->useHostRosTime()) {
-                    #ifdef ROS2
-                        msg.header.stamp = node_->now();
-                    #else
-                        msg.header.stamp = ros::Time::now();
-                    #endif
-                } else {
-                    msg.header.stamp = ns_to_ros_time(odom_data->timestamp_ns);
-                }
+            ros2_odom_convert_t* odom_data = (ros2_odom_convert_t*)stream->imageList[0].pAddr;
+            if (getRosNodeControl()->useHostRosTime()) {
+                msg.header.stamp = node_->now();
+            } else {
+                msg.header.stamp = ns_to_ros_time(odom_data->timestamp_ns);
+            }
 
                 msg.pose.pose.position.x = static_cast<double>(odom_data->pos[0]) / 1e6;
                 msg.pose.pose.position.y = static_cast<double>(odom_data->pos[1]) / 1e6;
@@ -1063,94 +831,13 @@ void publishRgb(capture_Image_List_t *stream) {
                 msg.pose.pose.orientation.x = static_cast<double>(odom_data->orient[0]) / 1e6;
                 msg.pose.pose.orientation.y = static_cast<double>(odom_data->orient[1]) / 1e6;
                 msg.pose.pose.orientation.z = static_cast<double>(odom_data->orient[2]) / 1e6;
-                msg.pose.pose.orientation.w = static_cast<double>(odom_data->orient[3]) / 1e6;
-            }
+            msg.pose.pose.orientation.w = static_cast<double>(odom_data->orient[3]) / 1e6;
+        }
 
-#ifdef ROS2
-            switch(odom_type) {
-                case OdometryType::STANDARD:
-                    {
-                    if (getRosNodeControl()->sendOdomBaseLinkTF()) {
-                        geometry_msgs::msg::TransformStamped transformStamped;
-                        if (getRosNodeControl()->useHostRosTime()) {
-                            transformStamped.header.stamp = node_->now();
-                        } else {
-                            transformStamped.header.stamp = msg.header.stamp;
-                        }
-                        transformStamped.header.frame_id = "odom";
-                        transformStamped.child_frame_id = "odin1_base_link";
-                        transformStamped.transform.translation.x = msg.pose.pose.position.x;
-                        transformStamped.transform.translation.y = msg.pose.pose.position.y;
-                        transformStamped.transform.translation.z = msg.pose.pose.position.z;
-                        transformStamped.transform.rotation.x = msg.pose.pose.orientation.x;
-                        transformStamped.transform.rotation.y = msg.pose.pose.orientation.y;
-                        transformStamped.transform.rotation.z = msg.pose.pose.orientation.z;
-                        transformStamped.transform.rotation.w = msg.pose.pose.orientation.w;
-                        tf_broadcaster->sendTransform(transformStamped);
-                    }
-                    odom_publisher_->publish(msg);
-
-                    // Publish odom trajectory as visualization markers (green lines connecting adjacent points)
-                    static visualization_msgs::msg::Marker marker;
-                    static std::vector<geometry_msgs::msg::Point> path_points;
-                    
-                    if (show_path) {
-                        marker.header = msg.header;
-                        marker.ns = "odom_trajectory";
-                        marker.id = 0;
-                        marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
-                        marker.action = visualization_msgs::msg::Marker::ADD;
-                        marker.pose.orientation.w = 1.0;
-                        marker.scale.x = 0.02;  // Line width
-                        marker.color.r = 0.0;
-                        marker.color.g = 1.0;
-                        marker.color.b = 0.0;
-                        marker.color.a = 1.0;
-        
-                        geometry_msgs::msg::Point pt;
-                        pt.x = msg.pose.pose.position.x;
-                        pt.y = msg.pose.pose.position.y;
-                        pt.z = msg.pose.pose.position.z;
-                        path_points.push_back(pt);
-                        
-                        // Keep only recent points to avoid memory issues (e.g., last 1000 points)
-                        if (path_points.size() > 30000) {
-                            path_points.erase(path_points.begin());
-                        }
-                        
-                        marker.points = path_points;
-        
-                        // Publish marker array
-                        static visualization_msgs::msg::MarkerArray marker_array;
-                        marker_array.markers.clear();  // Clear previous markers
-                        marker_array.markers.push_back(marker);
-                        path_publisher_->publish(marker_array);
-                    }
-
-                    if (show_camerapose) {
-                        // camera pose visualization (ROS2)
-                        Eigen::Vector3d P(msg.pose.pose.position.x,
-                                        msg.pose.pose.position.y,
-                                        msg.pose.pose.position.z);
-                        Eigen::Quaterniond R(msg.pose.pose.orientation.w,
-                                            msg.pose.pose.orientation.x,
-                                            msg.pose.pose.orientation.y,
-                                            msg.pose.pose.orientation.z);
-                        if (extrinsic_ok_) {
-                            P = P + R * t_ic_;
-                            R = R * R_ic_;
-                        }
-                        cameraposevisual_.reset();
-                        cameraposevisual_.add_pose(P, R);
-                        cameraposevisual_.publish_by(*pub_camera_pose_visual_, msg.header);
-                    }
-                    }
-                    break;
-                case OdometryType::HIGHFREQ:
-                    odom_highfreq_publisher_->publish(std::move(msg));
-                    break;
-                case OdometryType::TRANSFORM:
-                    {
+        switch(odom_type) {
+            case OdometryType::STANDARD:
+                {
+                if (getRosNodeControl()->sendOdomBaseLinkTF()) {
                     geometry_msgs::msg::TransformStamped transformStamped;
                     if (getRosNodeControl()->useHostRosTime()) {
                         transformStamped.header.stamp = node_->now();
@@ -1158,7 +845,7 @@ void publishRgb(capture_Image_List_t *stream) {
                         transformStamped.header.stamp = msg.header.stamp;
                     }
                     transformStamped.header.frame_id = "odom";
-                    transformStamped.child_frame_id = "map";
+                    transformStamped.child_frame_id = "odin1_base_link";
                     transformStamped.transform.translation.x = msg.pose.pose.position.x;
                     transformStamped.transform.translation.y = msg.pose.pose.position.y;
                     transformStamped.transform.translation.z = msg.pose.pose.position.z;
@@ -1167,115 +854,89 @@ void publishRgb(capture_Image_List_t *stream) {
                     transformStamped.transform.rotation.z = msg.pose.pose.orientation.z;
                     transformStamped.transform.rotation.w = msg.pose.pose.orientation.w;
                     tf_broadcaster->sendTransform(transformStamped);
+                }
+                odom_publisher_->publish(msg);
+
+                // Publish odom trajectory as visualization markers (green lines connecting adjacent points)
+                static visualization_msgs::msg::Marker marker;
+                static std::vector<geometry_msgs::msg::Point> path_points;
+                
+                if (show_path) {
+                    marker.header = msg.header;
+                    marker.ns = "odom_trajectory";
+                    marker.id = 0;
+                    marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+                    marker.action = visualization_msgs::msg::Marker::ADD;
+                    marker.pose.orientation.w = 1.0;
+                    marker.scale.x = 0.02;  // Line width
+                    marker.color.r = 0.0;
+                    marker.color.g = 1.0;
+                    marker.color.b = 0.0;
+                    marker.color.a = 1.0;
+    
+                    geometry_msgs::msg::Point pt;
+                    pt.x = msg.pose.pose.position.x;
+                    pt.y = msg.pose.pose.position.y;
+                    pt.z = msg.pose.pose.position.z;
+                    path_points.push_back(pt);
+                    
+                    // Keep only recent points to avoid memory issues (e.g., last 1000 points)
+                    if (path_points.size() > 30000) {
+                        path_points.erase(path_points.begin());
                     }
-                    break;
-            }
-#else
-            switch(odom_type) {
-                case OdometryType::STANDARD:
-                    {
-                    if (getRosNodeControl()->sendOdomBaseLinkTF()) {
-                        geometry_msgs::TransformStamped transformStamped;
-                        if (getRosNodeControl()->useHostRosTime()) {
-                            transformStamped.header.stamp = ros::Time::now();
-                        } else {
-                            transformStamped.header.stamp = msg.header.stamp;
-                        }
-                        transformStamped.header.frame_id = "odom";
-                        transformStamped.child_frame_id = "odin1_base_link";
-                        transformStamped.transform.translation.x = msg.pose.pose.position.x;
-                        transformStamped.transform.translation.y = msg.pose.pose.position.y;
-                        transformStamped.transform.translation.z = msg.pose.pose.position.z;
-                        transformStamped.transform.rotation.x = msg.pose.pose.orientation.x;
-                        transformStamped.transform.rotation.y = msg.pose.pose.orientation.y;
-                        transformStamped.transform.rotation.z = msg.pose.pose.orientation.z;
-                        transformStamped.transform.rotation.w = msg.pose.pose.orientation.w;
-                        tf_broadcaster->sendTransform(transformStamped);
+                    
+                    marker.points = path_points;
+    
+                    // Publish marker array
+                    static visualization_msgs::msg::MarkerArray marker_array;
+                    marker_array.markers.clear();  // Clear previous markers
+                    marker_array.markers.push_back(marker);
+                    path_publisher_->publish(marker_array);
+                }
+
+                if (show_camerapose) {
+                    // camera pose visualization (ROS2)
+                    Eigen::Vector3d P(msg.pose.pose.position.x,
+                                    msg.pose.pose.position.y,
+                                    msg.pose.pose.position.z);
+                    Eigen::Quaterniond R(msg.pose.pose.orientation.w,
+                                        msg.pose.pose.orientation.x,
+                                        msg.pose.pose.orientation.y,
+                                        msg.pose.pose.orientation.z);
+                    if (extrinsic_ok_) {
+                        P = P + R * t_ic_;
+                        R = R * R_ic_;
                     }
-                    odom_publisher_.publish(msg);
-
-                    if (show_path) {
-                        // Publish odom trajectory as visualization markers (green lines connecting adjacent points)
-                        static visualization_msgs::Marker marker;
-                        static std::vector<geometry_msgs::Point> path_points;
-                        
-                        marker.header = msg.header;
-                        marker.ns = "odom_trajectory";
-                        marker.id = 0;
-                        marker.type = visualization_msgs::Marker::LINE_STRIP;
-                        marker.action = visualization_msgs::Marker::ADD;
-                        marker.pose.orientation.w = 1.0;
-                        marker.scale.x = 0.02;  // Line width
-                        marker.color.r = 0.0;
-                        marker.color.g = 1.0;
-                        marker.color.b = 0.0;
-                        marker.color.a = 1.0;
-
-                        geometry_msgs::Point pt;
-                        pt.x = msg.pose.pose.position.x;
-                        pt.y = msg.pose.pose.position.y;
-                        pt.z = msg.pose.pose.position.z;
-                        path_points.push_back(pt);
-                        
-                        // Keep only recent points to avoid memory issues (e.g., last 1000 points)
-                        if (path_points.size() > 30000) {
-                            path_points.erase(path_points.begin());
-                        }
-                        
-                        marker.points = path_points;
-
-                        // Publish marker array
-                        static visualization_msgs::MarkerArray marker_array;
-                        marker_array.markers.clear();  // Clear previous markers
-                        marker_array.markers.push_back(marker);
-                        path_publisher_.publish(marker_array);
-                    }
-
-                    if (show_camerapose) {
-                        // camera pose visualization (ROS1)
-                        Eigen::Vector3d P(msg.pose.pose.position.x,
-                                        msg.pose.pose.position.y,
-                                        msg.pose.pose.position.z);
-                        Eigen::Quaterniond R(msg.pose.pose.orientation.w,
-                                            msg.pose.pose.orientation.x,
-                                            msg.pose.pose.orientation.y,
-                                            msg.pose.pose.orientation.z);
-                            
-                        if (extrinsic_ok_) {
-                            P = P + R * t_ic_;
-                            R = R * R_ic_;
-                        }
                         cameraposevisual_.reset();
                         cameraposevisual_.add_pose(P, R);
                         cameraposevisual_.publish_by(pub_camera_pose_visual_, msg.header);
-                    }
-                    }
-                    break;
-                case OdometryType::HIGHFREQ:
-                    odom_highfreq_publisher_.publish(msg);
-                    break;
-                case OdometryType::TRANSFORM:
-                    {
-                    geometry_msgs::TransformStamped transformStamped;
-                    if (getRosNodeControl()->useHostRosTime()) {
-                        transformStamped.header.stamp = ros::Time::now();
-                    } else {
-                        transformStamped.header.stamp = msg.header.stamp;
-                    }
-                    transformStamped.header.frame_id = "odom";
-                    transformStamped.child_frame_id = "map";
-                    transformStamped.transform.translation.x = msg.pose.pose.position.x;
-                    transformStamped.transform.translation.y = msg.pose.pose.position.y;
-                    transformStamped.transform.translation.z = msg.pose.pose.position.z;
-                    transformStamped.transform.rotation.x = msg.pose.pose.orientation.x;
-                    transformStamped.transform.rotation.y = msg.pose.pose.orientation.y;
-                    transformStamped.transform.rotation.z = msg.pose.pose.orientation.z;
-                    transformStamped.transform.rotation.w = msg.pose.pose.orientation.w;
-                    tf_broadcaster->sendTransform(transformStamped);
-                    }
-                    break;
-            }
-#endif
+                }
+                }
+                break;
+            case OdometryType::HIGHFREQ:
+                odom_highfreq_publisher_->publish(std::move(msg));
+                break;
+            case OdometryType::TRANSFORM:
+                {
+                geometry_msgs::msg::TransformStamped transformStamped;
+                if (getRosNodeControl()->useHostRosTime()) {
+                    transformStamped.header.stamp = node_->now();
+                } else {
+                    transformStamped.header.stamp = msg.header.stamp;
+                }
+                transformStamped.header.frame_id = "odom";
+                transformStamped.child_frame_id = "map";
+                transformStamped.transform.translation.x = msg.pose.pose.position.x;
+                transformStamped.transform.translation.y = msg.pose.pose.position.y;
+                transformStamped.transform.translation.z = msg.pose.pose.position.z;
+                transformStamped.transform.rotation.x = msg.pose.pose.orientation.x;
+                transformStamped.transform.rotation.y = msg.pose.pose.orientation.y;
+                transformStamped.transform.rotation.z = msg.pose.pose.orientation.z;
+                transformStamped.transform.rotation.w = msg.pose.pose.orientation.w;
+                tf_broadcaster->sendTransform(transformStamped);
+                }
+                break;
+        }
     }
 
     void initialize_data_logger(std::string data_dir = "") {
@@ -1286,14 +947,10 @@ void publishRgb(capture_Image_List_t *stream) {
             opts.base_dir = data_dir;
             data_logger_ = std::make_shared<BinaryDataLogger>(opts);
             root_dir_ = data_logger_->root_dir();
-            #ifdef ROS2
-                RCLCPP_INFO(node_->get_logger(), "Data logger initialized at %s", root_dir_.c_str());
-            #endif
+            RCLCPP_INFO(node_->get_logger(), "Data logger initialized at %s", root_dir_.c_str());
         } catch (...) {
             // Swallow logger initialization failures to avoid affecting runtime
-            #ifdef ROS2
-                RCLCPP_INFO(node_->get_logger(), "Failed to initialize data logger");
-            #endif
+            RCLCPP_INFO(node_->get_logger(), "Failed to initialize data logger");
             data_logger_.reset();
         }
     }
@@ -1428,9 +1085,7 @@ private:
                 cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(*msg, "bgr8");
                 images.push_back(cv_ptr->image.clone());
             } catch (cv_bridge::Exception& e) {
-                #ifndef ROS2
-                    ROS_ERROR("cv_bridge exception: %s", e.what());
-                #endif
+                // Silently ignore cv_bridge exceptions
             }
         }
         return images;
@@ -1451,7 +1106,6 @@ private:
         0.0, 0.0, 1.0, 0.02174,
         0.0, 0.0, 0.0, 1.0).finished();
     Eigen::Matrix4d T_cl_ = Eigen::Matrix4d::Identity(); // Camera->Lidar from YAML
-#ifdef ROS2
     std::vector<sensor_msgs::msg::PointCloud2> getIntensityCloudQueueSnapshot() {
         std::lock_guard<std::mutex> lock(pcd_queue_mutex_);
         std::vector<sensor_msgs::msg::PointCloud2> clouds;
@@ -1462,94 +1116,44 @@ private:
         
         return clouds;
     }
-#else
-    std::vector<sensor_msgs::PointCloud2> getIntensityCloudQueueSnapshot() {
-        std::lock_guard<std::mutex> lock(pcd_queue_mutex_);
-        std::vector<sensor_msgs::PointCloud2> clouds;
-        
-        for (const auto& msg_ptr : pcd_queue_) {
-            clouds.push_back(*msg_ptr);
-        }
-        
-        return clouds;
-    }
-#endif
 
     void initialize_publishers() {
-        #ifdef ROS2
-            auto qos_profile = rclcpp::QoS(1)
-                                    .reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE)
-                                    .durability(RMW_QOS_POLICY_DURABILITY_VOLATILE);
+        auto qos_profile = rclcpp::QoS(1)
+                                .reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE)
+                                .durability(RMW_QOS_POLICY_DURABILITY_VOLATILE);
 
-            imu_pub_ = node_->create_publisher<ros::Imu>("odin1/imu", qos_profile);
-            rgb_pub_ = node_->create_publisher<ros::Image>("odin1/image", qos_profile);
-            cloud_pub_ = node_->create_publisher<ros::PointCloud2>("odin1/cloud_raw", qos_profile);
-            xyzrgbacloud_pub_ = node_->create_publisher<ros::PointCloud2>("odin1/cloud_slam", qos_profile);
-            odom_publisher_ = node_->create_publisher<ros::Odometry>("odin1/odometry", qos_profile);
-            odom_highfreq_publisher_ = node_->create_publisher<ros::Odometry>("odin1/odometry_highfreq", qos_profile);
-            path_publisher_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("odin1/path", qos_profile);
-            pub_camera_pose_visual_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("odin1/camera_pose_visual", qos_profile);
-            rgbcloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("odin1/cloud_render", qos_profile);
-            compressed_rgb_pub_ = node_->create_publisher<sensor_msgs::msg::CompressedImage>("odin1/image/compressed", qos_profile);
-            undistort_rgb_pub_ = node_->create_publisher<sensor_msgs::msg::Image>("odin1/image/undistorted", qos_profile);
-            intensity_gray_pub_ = node_->create_publisher<sensor_msgs::msg::Image>("odin1/image/intensity_gray", qos_profile);
-            tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
-        #endif
+        imu_pub_ = node_->create_publisher<ros::Imu>("odin1/imu", qos_profile);
+        rgb_pub_ = node_->create_publisher<ros::Image>("odin1/image", qos_profile);
+        cloud_pub_ = node_->create_publisher<ros::PointCloud2>("odin1/cloud_raw", qos_profile);
+        xyzrgbacloud_pub_ = node_->create_publisher<ros::PointCloud2>("odin1/cloud_slam", qos_profile);
+        odom_publisher_ = node_->create_publisher<ros::Odometry>("odin1/odometry", qos_profile);
+        odom_highfreq_publisher_ = node_->create_publisher<ros::Odometry>("odin1/odometry_highfreq", qos_profile);
+        path_publisher_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("odin1/path", qos_profile);
+        pub_camera_pose_visual_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>("odin1/camera_pose_visual", qos_profile);
+        rgbcloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("odin1/cloud_render", qos_profile);
+        compressed_rgb_pub_ = node_->create_publisher<sensor_msgs::msg::CompressedImage>("odin1/image/compressed", qos_profile);
+        undistort_rgb_pub_ = node_->create_publisher<sensor_msgs::msg::Image>("odin1/image/undistorted", qos_profile);
+        intensity_gray_pub_ = node_->create_publisher<sensor_msgs::msg::Image>("odin1/image/intensity_gray", qos_profile);
+        tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
     }
-    #ifdef ROS1
-        void initialize_publishers(ros::NodeHandle& nh) {
-            imu_pub_ = nh.advertise<ros::Imu>("odin1/imu", 4000);
-            rgb_pub_ = nh.advertise<ros::Image>("odin1/image", 100);
-            cloud_pub_ = nh.advertise<ros::PointCloud2>("odin1/cloud_raw", 100);
-            xyzrgbacloud_pub_ = nh.advertise<ros::PointCloud2>("odin1/cloud_slam", 100);
-            odom_publisher_ = nh.advertise<ros::Odometry>("odin1/odometry", 100);
-            odom_highfreq_publisher_ = nh.advertise<ros::Odometry>("odin1/odometry_highfreq", 4000);
-            path_publisher_ = nh.advertise<visualization_msgs::MarkerArray>("odin1/path", 100);
-            pub_camera_pose_visual_ = nh.advertise<visualization_msgs::MarkerArray>("odin1/camera_pose_visual", 100);
-            rgbcloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>("odin1/cloud_render", 100);
-            compressed_rgb_pub_ = nh.advertise<sensor_msgs::CompressedImage>("odin1/image/compressed", 100);
-            undistort_rgb_pub_ = nh.advertise<sensor_msgs::Image>("odin1/image/undistorted", 100);
-            intensity_gray_pub_ = nh.advertise<sensor_msgs::Image>("odin1/image/intensity_gray", 100);
-            tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>();
-        }
-    #endif
 
-    #ifdef ROS2
-        rclcpp::Node::SharedPtr node_;
-        rclcpp::Publisher<ros::Imu>::SharedPtr imu_pub_;
-        rclcpp::Publisher<ros::Image>::SharedPtr rgb_pub_;
-        rclcpp::Publisher<ros::PointCloud2>::SharedPtr cloud_pub_;
-        rclcpp::Publisher<ros::PointCloud2>::SharedPtr xyzrgbacloud_pub_;
-        rclcpp::Publisher<ros::Odometry>::SharedPtr odom_publisher_;
-        rclcpp::Publisher<ros::Odometry>::SharedPtr odom_highfreq_publisher_;
-        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr path_publisher_;
-        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr rendered_cloud_pub_;
-        rclcpp::Publisher<PointCloud2Msg>::SharedPtr rgbcloud_pub_;
-        rclcpp::Publisher<ImageMsg>::SharedPtr rgbFromnv12_pub_;
-        rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr compressed_rgb_pub_; // New compressed image publisher
-        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr undistort_rgb_pub_;
-        rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr intensity_gray_pub_;
-        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_camera_pose_visual_;
-        camera_pose_visualization cameraposevisual_;
-        std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
-    #else
-        ros::Publisher imu_pub_;
-        ros::Publisher rgb_pub_;
-        ros::Publisher cloud_pub_;
-        ros::Publisher xyzrgbacloud_pub_;
-        ros::Publisher odom_publisher_;
-        ros::Publisher odom_highfreq_publisher_;
-        ros::Publisher path_publisher_;
-        ros::Publisher pub_camera_pose_visual_;
-        camera_pose_visualization cameraposevisual_;
-        ros::Publisher rendered_cloud_pub_;
-        ros::Publisher rgbcloud_pub_;
-        ros::Publisher rgbFromnv12_pub_;
-        ros::Publisher compressed_rgb_pub_; // New compressed image publisher
-        ros::Publisher undistort_rgb_pub_;
-        ros::Publisher intensity_gray_pub_;
-        std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
-    #endif
+    rclcpp::Node::SharedPtr node_;
+    rclcpp::Publisher<ros::Imu>::SharedPtr imu_pub_;
+    rclcpp::Publisher<ros::Image>::SharedPtr rgb_pub_;
+    rclcpp::Publisher<ros::PointCloud2>::SharedPtr cloud_pub_;
+    rclcpp::Publisher<ros::PointCloud2>::SharedPtr xyzrgbacloud_pub_;
+    rclcpp::Publisher<ros::Odometry>::SharedPtr odom_publisher_;
+    rclcpp::Publisher<ros::Odometry>::SharedPtr odom_highfreq_publisher_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr path_publisher_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr rendered_cloud_pub_;
+    rclcpp::Publisher<PointCloud2Msg>::SharedPtr rgbcloud_pub_;
+    rclcpp::Publisher<ImageMsg>::SharedPtr rgbFromnv12_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr compressed_rgb_pub_; // New compressed image publisher
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr undistort_rgb_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr intensity_gray_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_camera_pose_visual_;
+    camera_pose_visualization cameraposevisual_;
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 };
 
 class CommandLineControl {

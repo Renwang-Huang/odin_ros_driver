@@ -1,17 +1,4 @@
-/*
-Copyright 2025 Manifold Tech Ltd.(www.manifoldtech.com.co)
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-   http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
-#include "depth_image_ros2_node.hpp"
+#include "depth_image.hpp"
 #include <functional>
 
 DepthImageRos2Node::DepthImageRos2Node(const rclcpp::NodeOptions & options)
@@ -26,13 +13,6 @@ DepthImageRos2Node::DepthImageRos2Node(const rclcpp::NodeOptions & options)
     color_raw_topic_ = this->declare_parameter<std::string>("color_raw_topic", "/odin1/image");
     depth_image_topic_ = this->declare_parameter<std::string>("depth_image_topic", "/odin1/depth_img_competetion");
     depth_cloud_topic_ = this->declare_parameter<std::string>("depth_cloud_topic", "/odin1/depth_img_competetion_cloud");
-
-    RCLCPP_INFO_STREAM(this->get_logger(), 
-                       "\n  cloud_raw_topic: " << cloud_raw_topic_
-                       << "\n  color_compressed_topic: " << color_compressed_topic_
-                       << "\n  color_raw_topic: " << color_raw_topic_
-                       << "\n  depth_image_topic: " << depth_image_topic_
-                       << "\n  depth_cloud_topic: " << depth_cloud_topic_);
 }
 
 void DepthImageRos2Node::initialize()
@@ -48,8 +28,6 @@ void DepthImageRos2Node::initialize()
     it_ = std::make_shared<image_transport::ImageTransport>(shared_from_this());
     depth_image_pub_ = it_->advertise(depth_image_topic_, 1);
     depth_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(depth_cloud_topic_, 1);
-
-    RCLCPP_INFO(this->get_logger(), "DepthImageRos2Node initialized successfully");
 }
 
 PointCloudToDepthConverter::CameraParams DepthImageRos2Node::loadCameraParams()
@@ -87,24 +65,15 @@ PointCloudToDepthConverter::CameraParams DepthImageRos2Node::loadCameraParams()
     }
     else
     {
-        RCLCPP_ERROR(this->get_logger(), "Tcl_0 param missing or invalid, colored reproject cloud disabled.");
+        RCLCPP_ERROR(this->get_logger(), "Tcl_0 missing or invalid");
         rclcpp::shutdown();
     }
 
     if (params.A11 < 1e-6 || params.A22 < 1e-6 || params.u0 < 1e-6 || params.v0 < 1e-6)
     {
-        RCLCPP_ERROR(this->get_logger(), "Invalid camera intrinsics A11 or A22");
+        RCLCPP_ERROR(this->get_logger(), "Invalid camera intrinsics");
         rclcpp::shutdown();
     }
-
-    RCLCPP_INFO(this->get_logger(), "Camera intrinsics:");
-    RCLCPP_INFO(this->get_logger(), "Image size: %dx%d", params.image_width, params.image_height);
-    RCLCPP_INFO(this->get_logger(), "Intrinsics: A11=%f A12=%f A22=%f u0=%f v0=%f",
-             params.A11, params.A12, params.A22, params.u0, params.v0);
-    RCLCPP_INFO(this->get_logger(), "Distortions: k2=%f k3=%f k4=%f k5=%f k6=%f k7=%f",
-             params.k2, params.k3, params.k4, params.k5, params.k6, params.k7);
-    RCLCPP_INFO(this->get_logger(), "Scale: %f, Point sampling rate: %d", params.scale, params.point_sampling_rate);
-    RCLCPP_INFO_STREAM(this->get_logger(), "Extrinsics (Tcl):\n" << params.Tcl);
 
     return params;
 }
@@ -117,7 +86,7 @@ void DepthImageRos2Node::syncCallback(const sensor_msgs::msg::PointCloud2::Const
     pcl::fromROSMsg(*cloud_msg, cloud);
     if (cloud.empty())
     {
-        RCLCPP_WARN(this->get_logger(), "Empty point cloud received");
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Empty point cloud");
         return;
     }
 
@@ -129,7 +98,7 @@ void DepthImageRos2Node::syncCallback(const sensor_msgs::msg::PointCloud2::Const
         img_raw = cv_ptr->image;
         if (img_raw.empty())
         {
-            RCLCPP_WARN(this->get_logger(), "Failed to decode compressed image");
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Empty image");
             return;
         }
     }
@@ -143,7 +112,7 @@ void DepthImageRos2Node::syncCallback(const sensor_msgs::msg::PointCloud2::Const
 
     if (!result.success)
     {
-        RCLCPP_WARN(this->get_logger(), "Data processing failed: %s", result.error_message.c_str());
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Processing failed: %s", result.error_message.c_str());
         return;
     }
 

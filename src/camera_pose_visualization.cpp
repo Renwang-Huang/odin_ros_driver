@@ -1,16 +1,3 @@
-/*
-Copyright 2025 Manifold Tech Ltd.(www.manifoldtech.com.co)
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-   http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 #include "camera_pose_visualization.h"
 
 const Eigen::Vector3d camera_pose_visualization::imlt = Eigen::Vector3d(-1.0, -0.5, 1.0);
@@ -22,11 +9,7 @@ const Eigen::Vector3d camera_pose_visualization::lt1 = Eigen::Vector3d(-0.7, -0.
 const Eigen::Vector3d camera_pose_visualization::lt2 = Eigen::Vector3d(-1.0, -0.2, 1.0);
 const Eigen::Vector3d camera_pose_visualization::oc = Eigen::Vector3d(0.0, 0.0, 0.0);
 
-#ifdef ROS2
 using GeometryPoint = geometry_msgs::msg::Point;
-#else
-using GeometryPoint = geometry_msgs::Point;
-#endif
 
 void Eigen2Point(const Eigen::Vector3d& v, GeometryPoint& p) {
     p.x = v.x();
@@ -71,13 +54,8 @@ void camera_pose_visualization::add_edge(const Eigen::Vector3d& p0, const Eigen:
 
     marker.ns = m_marker_ns;
     marker.id = m_markers.size() + 1;
-#ifdef ROS2
     marker.type = Marker::LINE_LIST;
     marker.action = Marker::ADD;
-#else
-    marker.type = visualization_msgs::Marker::LINE_LIST;
-    marker.action = visualization_msgs::Marker::ADD;
-#endif
     marker.scale.x = 0.005;
 
     marker.color.g = 1.0f;
@@ -130,13 +108,8 @@ void camera_pose_visualization::add_pose(const Eigen::Vector3d& p, const Eigen::
 
     marker.ns = m_marker_ns;
     marker.id = m_markers.size() + 1;
-#ifdef ROS2
     marker.type = Marker::LINE_STRIP;
     marker.action = Marker::ADD;
-#else
-    marker.type = visualization_msgs::Marker::LINE_STRIP;
-    marker.action = visualization_msgs::Marker::ADD;
-#endif
     marker.scale.x = m_line_width;
 
     marker.pose.position.x = 0.0;
@@ -228,5 +201,5 @@ void camera_pose_visualization::publish_by( Publisher& pub, const Header& header
         markerArray_msg.markers.push_back(marker);
     }
 
-    pub.publish(markerArray_msg);
+    pub->publish(markerArray_msg);
 }
